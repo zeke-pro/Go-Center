@@ -1,4 +1,4 @@
-module center
+module github.com/zeke-pro/go-center
 
 go 1.19
 
