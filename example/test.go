@@ -1,13 +1,14 @@
 package main
 
 import (
+	"center"
 	"center/datastore"
 	"fmt"
 )
 
 func main() {
 	//定义
-	self := CreateCurrentServiceFromEnv()
+	self := center.CreateCurrentServiceFromEnv()
 	self.Endpoints = []*datastore.Endpoint{
 		{
 			Scheme:  "http",
@@ -35,7 +36,7 @@ func main() {
 	}
 	config1Store := datastore.NewConfigStore("config1", &TestConfig{}, "testConfig")
 
-	if center, err := NewCenter(CurrentService(self)); err == nil {
+	if center, err := center.NewCenter(center.CurrentService(self)); err == nil {
 		defer center.Close()
 		//注册
 		err = center.Register()
