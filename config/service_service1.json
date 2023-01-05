@@ -1,0 +1,1 @@
+[{"id":"8a2f917e-8ce2-11ed-831c-6e3643a6f17d","name":"test_service","namespace":"center","mateData":null,"endpoints":[{"scheme":"http","address":"127.0.0.1","port":12888,"name":""},{"scheme":"https","address":"127.0.0.1","port":12889,"name":""},{"scheme":"grpc","address":"127.0.0.1","port":12991,"name":""}]}]
