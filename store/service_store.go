@@ -1,4 +1,4 @@
-package datastore
+package store
 
 import (
 	"center/constant"
@@ -18,15 +18,8 @@ type Endpoint struct {
 type Service struct {
 	Id        string                 `json:"id"`
 	Name      string                 `json:"name"`
-	Namespace string                 `json:"namespace"`
 	MateData  map[string]interface{} `json:"mateData"`
 	Endpoints []*Endpoint            `json:"endpoints"`
-}
-
-type IServiceStore interface {
-	GetName() string
-	GetList() []*Service
-	SetList(list []*Service) error
 }
 
 type ServiceStore struct {
@@ -36,7 +29,7 @@ type ServiceStore struct {
 	list        []*Service
 }
 
-func NewServiceStore(name string) *ServiceStore {
+func NewDefaultServiceStore(name string) *ServiceStore {
 	dir := constant.ConfigDir
 	fp := filepath.Join(dir, fmt.Sprintf("service_%s.json", name))
 	var list []*Service

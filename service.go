@@ -2,7 +2,7 @@ package center
 
 import (
 	"center/constant"
-	"center/datastore"
+	"center/store"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func marshal(si *datastore.Service) (string, error) {
+func marshal(si *store.Service) (string, error) {
 	data, err := json.Marshal(si)
 	if err != nil {
 		return "", err
@@ -18,27 +18,32 @@ func marshal(si *datastore.Service) (string, error) {
 	return string(data), nil
 }
 
-func unmarshal(data []byte) (si *datastore.Service, err error) {
+func unmarshal(data []byte) (si *store.Service, err error) {
 	err = json.Unmarshal(data, &si)
 	return
 }
 
-func CreateCurrentServiceFromEnv() *datastore.Service {
-	return &datastore.Service{
-		Id:        constant.ServiceId,
-		Name:      constant.ServiceName,
-		Namespace: constant.ServiceNamespace,
+type IServiceStore interface {
+	GetName() string
+	SetList(list []*store.Service) error
+}
+
+func CreateCurrentServiceFromEnv() *store.Service {
+	return &store.Service{
+		Id:   constant.ServiceId,
+		Name: constant.ServiceName,
 	}
 }
 
 // 获取
-func (r *Center) getServices(ctx context.Context, key string, store datastore.IServiceStore) error {
-
+func (r *Center) getService(key string, serviceStore IServiceStore) error {
+	ctx, cancel := context.WithTimeout(r.ctx, time.Second*5)
+	defer cancel()
 	resp, err := r.kv.Get(ctx, key, clientv3.WithPrefix())
 	if err != nil {
 		return err
 	}
-	items := make([]*datastore.Service, 0)
+	items := make([]*store.Service, 0)
 	for _, kv := range resp.Kvs {
 		si, err := unmarshal(kv.Value)
 		if err != nil {
@@ -46,22 +51,19 @@ func (r *Center) getServices(ctx context.Context, key string, store datastore.IS
 		}
 		items = append(items, si)
 	}
-	store.SetList(items)
+	serviceStore.SetList(items)
 	return nil
 }
 
-// TakeOverServiceList 接管服务列表.
-func (r *Center) TakeOverServiceList(store datastore.IServiceStore) error {
-	key := fmt.Sprintf("%s/%s/%s", r.opts.self.Namespace, "service", store.GetName())
-	ctx, _ := context.WithTimeout(r.opts.ctx, time.Second*5)
-	err := r.getServices(ctx, key, store)
+func (r *Center) getAndWatchService(serviceStore IServiceStore) error {
+	key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, "service", serviceStore.GetName())
+	err := r.getService(key, serviceStore)
 	if err != nil {
 		return err
 	}
 	//监听变化
-	lCtx := r.opts.ctx
-	watcher := clientv3.NewWatcher(r.Client)
-	ch := watcher.Watch(lCtx, key, clientv3.WithPrefix(), clientv3.WithRev(0), clientv3.WithKeysOnly())
+	watcher := clientv3.NewWatcher(r.client)
+	ch := watcher.Watch(r.ctx, key, clientv3.WithPrefix(), clientv3.WithRev(0), clientv3.WithKeysOnly())
 	err = watcher.RequestProgress(context.Background())
 	if err != nil {
 		return err
@@ -69,15 +71,23 @@ func (r *Center) TakeOverServiceList(store datastore.IServiceStore) error {
 	go func() {
 		for {
 			select {
-			case <-lCtx.Done():
-				watcher.Close()
+			case <-r.ctx.Done():
 				return
 			case <-ch:
-				//刚启动，没有变化也会走到这里来
-				ctx1, _ := context.WithTimeout(r.opts.ctx, time.Second*5)
-				r.getServices(ctx1, key, store)
+				r.getService(key, serviceStore)
 			}
 		}
 	}()
+	return nil
+}
+
+// DiscoverServices 发现服务.
+func (r *Center) DiscoverServices(serviceStore ...IServiceStore) error {
+	for _, d := range serviceStore {
+		err := r.getAndWatchService(d)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }

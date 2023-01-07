@@ -2,6 +2,7 @@ package center
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"math/rand"
@@ -15,9 +16,12 @@ import (
 //	然后创建key写入值： r.registerWithKV(ctx, key, value)，
 //	同时监听心跳： r.heartBeat(r.opts.ctx, leaseID, key, value)
 func (r *Center) Register() error {
-	ctx, cancel := context.WithTimeout(r.opts.ctx, r.opts.registrarTimeout)
+	if r.opts.self == nil {
+		return errors.New("no self service defined")
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, r.opts.registrarTimeout)
 	defer cancel()
-	key := fmt.Sprintf("%s/%s/%s/%s", r.opts.self.Namespace, "service", r.opts.self.Name, r.opts.self.Id)
+	key := fmt.Sprintf("%s/%s/%s/%s", r.opts.namespace, "service", r.opts.self.Name, r.opts.self.Id)
 	value, err := marshal(r.opts.self)
 	if err != nil {
 		return err
@@ -25,25 +29,27 @@ func (r *Center) Register() error {
 	if r.lease != nil {
 		r.lease.Close()
 	}
-	r.lease = clientv3.NewLease(r.Client)
+	r.lease = clientv3.NewLease(r.client)
 	leaseID, err := r.registerWithKV(ctx, key, value)
 	if err != nil {
 		return err
 	}
 
-	go r.heartBeat(r.opts.ctx, leaseID, key, value)
+	go r.heartBeat(r.ctx, leaseID, key, value)
 	return nil
 }
 
 // Deregister the registration.
 func (r *Center) Deregister() error {
+	ctx, cancel := context.WithTimeout(r.ctx, r.opts.registrarTimeout)
+	defer cancel()
 	defer func() {
 		if r.lease != nil {
 			r.lease.Close()
 		}
 	}()
-	key := fmt.Sprintf("%s/%s/%s/%s", r.opts.self.Namespace, "service", r.opts.self.Name, r.opts.self.Id)
-	_, err := r.Client.Delete(context.TODO(), key)
+	key := fmt.Sprintf("%s/%s/%s/%s", r.opts.namespace, "service", r.opts.self.Name, r.opts.self.Id)
+	_, err := r.client.Delete(ctx, key)
 	return err
 }
 
@@ -58,7 +64,7 @@ func (r *Center) registerWithKV(ctx context.Context, key string, value string) (
 	if err != nil {
 		return 0, err
 	}
-	_, err = r.Client.Put(ctx, key, value, clientv3.WithLease(grant.ID))
+	_, err = r.client.Put(ctx, key, value, clientv3.WithLease(grant.ID))
 	if err != nil {
 		return 0, err
 	}
@@ -68,7 +74,7 @@ func (r *Center) registerWithKV(ctx context.Context, key string, value string) (
 // heartBeat 监听心跳  也可以理解为租约的业务实现
 func (r *Center) heartBeat(ctx context.Context, leaseID clientv3.LeaseID, key string, value string) {
 	curLeaseID := leaseID
-	kac, err := r.Client.KeepAlive(ctx, leaseID)
+	kac, err := r.client.KeepAlive(ctx, leaseID)
 	if err != nil {
 		curLeaseID = 0
 	}
@@ -105,7 +111,7 @@ func (r *Center) heartBeat(ctx context.Context, leaseID clientv3.LeaseID, key st
 				case curLeaseID = <-idChan:
 				}
 
-				kac, err = r.Client.KeepAlive(ctx, curLeaseID)
+				kac, err = r.client.KeepAlive(ctx, curLeaseID)
 				if err == nil {
 					break
 				}
@@ -129,7 +135,7 @@ func (r *Center) heartBeat(ctx context.Context, leaseID clientv3.LeaseID, key st
 				curLeaseID = 0
 				continue
 			}
-		case <-r.opts.ctx.Done():
+		case <-r.ctx.Done():
 			return
 		}
 	}

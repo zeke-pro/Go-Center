@@ -2,14 +2,79 @@ package main
 
 import (
 	"center"
-	"center/datastore"
+	"center/store"
+	"context"
+	"encoding/json"
 	"fmt"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+// 配置
+type TestConfig struct {
+	Name string `json:"name"`
+	Num  int    `json:"num"`
+}
+
+/**
+环境变量
+CENTER_ADDR=127.0.0.1:2379;SERVICE_NAME=test_service;SERVICE_NAMESPACE=center
+*/
+
 func main() {
-	//定义
+	c, err := center.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	//向etcd添加测试数据
+	//addTestData(c.GetEtcdClient())
+
+	//服务发现
+	service1 := store.NewDefaultServiceStore("service1")
+	err = c.DiscoverServices(service1)
+	if err != nil {
+		panic(err)
+	}
+
+	//配置
+
+	//不通过
+	//config1 := store.NewDefaultConfigStore[*TestConfig]("config1")
+
+	//ok
+	//config2 := store.NewDefaultConfigStore[TestConfig]("config2")
+
+	//字符串配置
+	//ok
+	//config3 := store.NewDefaultConfigStore[string]("config3")
+
+	//Prefix 映射成数组
+	//报错
+	config4 := store.NewConfigStore[[]*TestConfig]("config4", &store.LocalConfig{Path: "config4.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+
+	//Prefix 映射成map,不保存本地
+	//报错
+	//config5 := store.NewConfigStore[map[string]*TestConfig]("config5", nil, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+
+	//Prefix 映射成字符串数组
+	//报错
+	//config6 := store.NewConfigStore[[]string]("config6", nil, &store.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
+	err = c.SyncConfigs(
+		//config1,
+		//config2,
+		//config3,
+		config4,
+		//config5,
+		//config6,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	//注册
+	//定义自己
 	self := center.CreateCurrentServiceFromEnv()
-	self.Endpoints = []*datastore.Endpoint{
+	self.Endpoints = []*store.Endpoint{
 		{
 			Scheme:  "http",
 			Address: "127.0.0.1",
@@ -26,34 +91,67 @@ func main() {
 			Port:    12999,
 		},
 	}
-	//服务发现,从本地文件读取
-	service1Store := datastore.NewServiceStore("service1")
-
-	//配置
-	type TestConfig struct {
-		Name  string `json:"name"`
-		Param string `json:"param"`
+	c.SetSelf(self)
+	defer c.Close()
+	err = c.Register()
+	if err != nil {
+		panic(err)
 	}
-	config1Store := datastore.NewConfigStore("config1", &TestConfig{}, "testConfig")
-
-	if center, err := center.NewCenter(center.CurrentService(self)); err == nil {
-		defer center.Close()
-		//注册
-		err = center.Register()
-		if err != nil {
-			panic(err)
-		}
-		//接管服务发现
-		center.TakeOverServiceList(service1Store)
-		//接管配置
-		center.TakeOverConfig(config1Store)
-		config1Store.OnChange(func(newValue any) {
-			conf := newValue.(*TestConfig)
-			fmt.Printf(conf.Name)
-		})
-		//center.Close()
-	}
-
 	for {
+	}
+}
+func addTestData(client *clientv3.Client) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	//服务发现数据
+	for i := 1; i < 8; i++ {
+		id := fmt.Sprintf("id-%d", i)
+		name := fmt.Sprintf("name-%d", i)
+		addr := fmt.Sprintf("192.168.0.%d", i)
+		service := store.Service{Id: id, Name: name}
+		service.Endpoints = []*store.Endpoint{
+			{
+				Scheme:  "http",
+				Address: addr,
+				Port:    12888,
+			},
+			{
+				Scheme:  "https",
+				Address: addr,
+				Port:    12889,
+			},
+			{
+				Scheme:  "grpc",
+				Address: addr,
+				Port:    12999,
+			},
+		}
+		d, _ := json.Marshal(service)
+		str := string(d)
+		key := fmt.Sprintf("%s/%s/%s/%s", "center", "service", "service1", id)
+		client.Put(ctx, key, str)
+	}
+	//配置
+	//config1
+	b, _ := json.Marshal(&TestConfig{Name: "test", Num: 1})
+	config1Str := string(b)
+	key := fmt.Sprintf("%s/%s/%s", "center", "config", "config1")
+	client.Put(ctx, key, config1Str)
+	//config2
+	key = fmt.Sprintf("%s/%s/%s", "center", "config", "config2")
+	client.Put(ctx, key, config1Str)
+	//config3
+	key = fmt.Sprintf("%s/%s/%s", "center", "config", "config3")
+	client.Put(ctx, key, "config3-value")
+	//config4,5
+	for i := 1; i < 8; i++ {
+		key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config4", i)
+		client.Put(ctx, key, config1Str)
+	}
+	//config6
+	for i := 1; i < 8; i++ {
+		key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config6", i)
+		value := fmt.Sprintf("value-%d", i)
+		client.Put(ctx, key, value)
 	}
 }

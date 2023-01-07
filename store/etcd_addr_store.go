@@ -1,4 +1,4 @@
-package datastore
+package store
 
 import (
 	"center/constant"
@@ -21,7 +21,7 @@ type EtcdAddrStore struct {
 
 const fileName string = "center.json"
 
-func NewEtcdAddrStoreFromEnv() *EtcdAddrStore {
+func NewDefaultEtcdAddrStore() *EtcdAddrStore {
 	dir := constant.ConfigDir
 	fp := filepath.Join(dir, fileName)
 	var list []string

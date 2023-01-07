@@ -1,7 +1,8 @@
 package center
 
 import (
-	"center/datastore"
+	"center/constant"
+	"center/store"
 	"context"
 	"errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -13,25 +14,25 @@ import (
 type Option func(o *options)
 
 type options struct {
-	ctx              context.Context
-	self             *datastore.Service
+	self             *store.Service
 	ttl              time.Duration
 	maxRetry         int // 最大重试次数
-	addrStore        datastore.IEtcdAddrStore
+	addrStore        store.IEtcdAddrStore
 	registrarTimeout time.Duration
-}
-
-// Context with registry context.
-func Context(ctx context.Context) Option {
-	return func(o *options) { o.ctx = ctx }
+	namespace        string
 }
 
 // AddressStore with center address store
-func AddressStore(store datastore.IEtcdAddrStore) Option {
+func AddressStore(store store.IEtcdAddrStore) Option {
 	return func(o *options) { o.addrStore = store }
 }
 
-func CurrentService(service *datastore.Service) Option {
+// Namespace with center namespace
+func Namespace(namespace string) Option {
+	return func(o *options) { o.namespace = namespace }
+}
+
+func CurrentService(service *store.Service) Option {
 	return func(o *options) { o.self = service }
 }
 
@@ -46,25 +47,27 @@ func MaxRetry(num int) Option {
 
 type Center struct {
 	opts   *options
-	Client *clientv3.Client
+	ctx    context.Context
+	cancel func()
+	client *clientv3.Client
 	kv     clientv3.KV
 	lease  clientv3.Lease // 租约
 }
 
 func NewCenter(opts ...Option) (*Center, error) {
 	op := &options{
-		ctx:              context.Background(),
 		self:             nil,
 		ttl:              time.Second * 15,
 		maxRetry:         5,
 		addrStore:        nil,
 		registrarTimeout: time.Second * 5,
+		namespace:        constant.ServiceNamespace,
 	}
 	for _, o := range opts {
 		o(op)
 	}
 	if op.addrStore == nil {
-		store := datastore.NewEtcdAddrStoreFromEnv()
+		store := store.NewDefaultEtcdAddrStore()
 		if len(store.Get()) <= 0 {
 			return nil, errors.New("center address is not define")
 		}
@@ -77,16 +80,26 @@ func NewCenter(opts ...Option) (*Center, error) {
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Center{
 		opts:   op,
-		Client: client,
+		client: client,
 		kv:     clientv3.NewKV(client),
+		ctx:    ctx,
+		cancel: cancel,
 	}, nil
 }
 
 func (r *Center) Close() error {
 	r.Deregister()
-	r.Client.Close()
-	r.opts.ctx.Done()
+	r.client.Close()
+	r.cancel()
 	return nil
+}
+
+func (r *Center) SetSelf(service *store.Service) {
+	r.opts.self = service
+}
+func (r *Center) GetEtcdClient() *clientv3.Client {
+	return r.client
 }
