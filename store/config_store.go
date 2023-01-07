@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 )
 
 type RemoteConfig struct {
@@ -67,125 +68,94 @@ func newElemWhenNil(data any) {
 
 }
 
-// 不带Prefix的解析，data必须是引用类型
-func parseBytes(b []byte, data any) error {
-	tp := reflect.TypeOf(data).Elem()
-	switch tp.Kind() {
-	case reflect.String:
-		v := data.(*string)
-		*v = string(b)
-	case reflect.Struct:
-		err := json.Unmarshal(b, data)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("type not supported")
+// 不带Prefix的解析
+func parseBytes(b []byte, resType reflect.Type) reflect.Value {
+	n := reflect.New(resType)
+	if b == nil || len(b) == 0 {
+		return n
 	}
-	return nil
+	switch resType.Kind() {
+	case reflect.Pointer:
+		child := parseBytes(b, resType.Elem())
+		if !child.IsValid() {
+			return reflect.Value{}
+		}
+		n.Elem().Set(child)
+	case reflect.Struct:
+		unmarshal := reflect.ValueOf(json.Unmarshal)
+		args := []reflect.Value{
+			reflect.ValueOf(b),
+			n,
+		}
+		r := unmarshal.Call(args)
+		if !r[0].IsNil() {
+			return reflect.Value{}
+		}
+	case reflect.String:
+		n.Elem().SetString(string(b))
+	default:
+		return reflect.Value{}
+	}
+	return n
 }
 
 // 带Prefix的解析，data必须是引用类型
-func parseKV(kvs []*mvccpb.KeyValue, data any) error {
+func parseKV(kvs []*mvccpb.KeyValue, resType reflect.Type) reflect.Value {
+	n := reflect.New(resType)
 	if len(kvs) == 0 {
-		return nil
+		return n
 	}
-	tp := reflect.TypeOf(data).Elem()
-	switch tp.Kind() {
+	switch resType.Kind() {
+	case reflect.Pointer:
+		child := parseKV(kvs, resType.Elem())
+		if !child.IsValid() {
+			return reflect.Value{}
+		}
+		n.Elem().Set(child)
 	case reflect.Slice:
-		slTp := tp.Elem()
-		//是否指针
-		isPoint := slTp.Kind() == reflect.Ptr
-		if isPoint {
-			slTp = slTp.Elem()
-		}
-		sl := reflect.MakeSlice(tp, len(kvs), len(kvs))
+		sl := reflect.MakeSlice(resType, len(kvs), len(kvs))
 		for i, kv := range kvs {
-			d := reflect.New(slTp)
-			parseFunc := reflect.ValueOf(parseBytes)
-			args := []reflect.Value{
-				reflect.ValueOf(kv.Value),
-				d,
-			}
-			res := parseFunc.Call(args)[0].Interface()
-			if res != nil {
-				return res.(error)
-			}
-			if isPoint {
-				sl.Index(i).Set(d)
-			} else {
-				sl.Index(i).Set(d.Elem())
-			}
+			v := parseBytes(kv.Value, resType.Elem()).Elem()
+			sl.Index(i).Set(v)
 		}
-		a := sl.Interface()
-		d := data
-		*d = a
+		n.Elem().Set(sl)
 	case reflect.Map:
-		slTp := tp.Elem()
-		//是否指针
-		isPoint := slTp.Kind() == reflect.Ptr
-		if isPoint {
-			slTp = slTp.Elem()
-		}
-		if slTp.Key().Kind() != reflect.String {
-			return errors.New("only map with string key are supported")
-		}
-		mp := reflect.MakeMapWithSize(tp, len(kvs))
+		mp := reflect.MakeMapWithSize(resType, len(kvs))
 		for _, kv := range kvs {
-			key := string(kv.Key)
-			d := reflect.New(slTp)
-			parseFunc := reflect.ValueOf(parseBytes)
-			args := []reflect.Value{
-				reflect.ValueOf(kv.Value),
-				d,
+			k := string(kv.Key)
+			arr := strings.Split(k, "/")
+			if len(arr) < 3 {
+				return n
 			}
-			res := parseFunc.Call(args)[0].Interface()
-			if res != nil {
-				return res.(error)
-			}
-			if isPoint {
-				mp.SetMapIndex(reflect.ValueOf(key), d)
-			} else {
-				mp.SetMapIndex(reflect.ValueOf(key), d.Elem())
-			}
+			arr = arr[3:]
+			k = strings.Join(arr, "/")
+			key := reflect.ValueOf(k)
+			value := parseBytes(kv.Value, resType.Elem()).Elem()
+			mp.SetMapIndex(key, value)
 		}
-		d := data.(*any)
-		*d = mp.Interface()
+		n.Elem().Set(mp)
 	default:
-		return errors.New("type not supported")
+		return reflect.Value{}
 	}
-	return nil
+	return n
 }
 
 func (c *ConfigStore[T]) Parse(kvs []*mvccpb.KeyValue) error {
-	var data T
-	var tpr any
-	isPoint := reflect.TypeOf(data).Kind() == reflect.Ptr
-	if isPoint {
-		tpr = data
-	} else {
-		tpr = &data
+	if len(kvs) == 0 {
+		return nil
 	}
+	var data T
+	var parsedValue reflect.Value
 	prefix := c.remote.Prefix
 	if prefix {
-		err := parseKV(kvs, tpr)
-		if err != nil {
-			return err
-		}
+		parsedValue = parseKV(kvs, reflect.TypeOf(data))
 	} else {
-		if len(kvs) > 1 {
-			return errors.New("the remote config format is incorrect")
-		}
-		if len(kvs) < 1 {
-			return errors.New("remote configuration does not exist")
-		}
-		b := kvs[0].Value
-		err := parseBytes(b, tpr)
-		if err != nil {
-			return err
-		}
+		parsedValue = parseBytes(kvs[0].Value, reflect.TypeOf(data))
 	}
-
+	if !parsedValue.IsValid() {
+		return errors.New("parse failed")
+	}
+	data = parsedValue.Elem().Interface().(T)
 	c.data = data
 	//写入文件
 	if c.local != nil && c.local.SyncFile && c.local.Path != "" {

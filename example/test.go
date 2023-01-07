@@ -35,41 +35,39 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("发现了服务")
+	for _, v := range service1.GetList() {
+		fmt.Println(v)
+	}
 
 	//配置
-
-	//不通过
-	//config1 := store.NewDefaultConfigStore[*TestConfig]("config1")
-
-	//ok
-	//config2 := store.NewDefaultConfigStore[TestConfig]("config2")
-
+	config1 := store.NewDefaultConfigStore[*TestConfig]("config1")
+	config2 := store.NewDefaultConfigStore[TestConfig]("config2")
 	//字符串配置
-	//ok
-	//config3 := store.NewDefaultConfigStore[string]("config3")
-
+	config3 := store.NewDefaultConfigStore[string]("config3")
 	//Prefix 映射成数组
-	//报错
-	config4 := store.NewConfigStore[[]*TestConfig]("config4", &store.LocalConfig{Path: "config4.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
-
-	//Prefix 映射成map,不保存本地
-	//报错
-	//config5 := store.NewConfigStore[map[string]*TestConfig]("config5", nil, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
-
+	config4 := store.NewConfigStore[[]*TestConfig]("config4", &store.LocalConfig{Path: "config/config4.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+	//Prefix 映射成map
+	config5 := store.NewConfigStore[map[string]*TestConfig]("config5", &store.LocalConfig{Path: "config/config5.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成字符串数组
-	//报错
-	//config6 := store.NewConfigStore[[]string]("config6", nil, &store.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
+	config6 := store.NewConfigStore[[]string]("config6", &store.LocalConfig{Path: "config/config6.json", SyncFile: true}, &store.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
 	err = c.SyncConfigs(
-		//config1,
-		//config2,
-		//config3,
+		config1,
+		config2,
+		config3,
 		config4,
-		//config5,
-		//config6,
+		config5,
+		config6,
 	)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("config1", config1.Get())
+	fmt.Println("config2", config2.Get())
+	fmt.Println("config3", config3.Get())
+	fmt.Println("config4", config4.Get())
+	fmt.Println("config5", config5.Get())
+	fmt.Println("config6", config6.Get())
 
 	//注册
 	//定义自己
