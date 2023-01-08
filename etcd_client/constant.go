@@ -31,9 +31,6 @@ func init() {
 		ServiceId = uid.String()
 	}
 	ServiceName = os.Getenv("SERVICE_NAME")
-	if ServiceName == "" {
-		panic("service name is not define")
-	}
 	ServiceNamespace = os.Getenv("SERVICE_NAMESPACE")
 	if ServiceNamespace == "" {
 		ServiceNamespace = "center"

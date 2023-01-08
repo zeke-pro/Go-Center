@@ -17,8 +17,15 @@ import (
 //	然后创建key写入值： r.registerWithKV(ctx, key, value)，
 //	同时监听心跳： r.heartBeat(r.opts.ctx, leaseID, key, value)
 func (r *Center) Register() error {
-	if r.opts.self == nil {
+	self := r.opts.self
+	if self == nil {
 		return errors.New("no self service defined")
+	}
+	if self.Name == "" {
+		return errors.New("current service name is not defined")
+	}
+	if self.Id == "" {
+		return errors.New("current service id is not defined")
 	}
 	ctx, cancel := context.WithTimeout(r.ctx, r.opts.registrarTimeout)
 	defer cancel()
