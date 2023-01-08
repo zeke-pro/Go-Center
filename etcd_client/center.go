@@ -138,7 +138,11 @@ func (r *Center) requestKV(key string, store IStore) error {
 		return err
 	}
 	kv := convertKv(res.Kvs, prefix)
-	return store.Parse(kv)
+	if len(kv) > 0 {
+		return store.Parse(kv)
+	}
+	return nil
+
 }
 
 func convertKv(kvs []*mvccpb.KeyValue, prefix string) []*RemoteData {
