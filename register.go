@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"log"
 	"math/rand"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -36,7 +40,26 @@ func (r *Center) Register() error {
 	}
 
 	go r.heartBeat(r.ctx, leaseID, key, value)
+
+	go r.GraceShutdown()
+
 	return nil
+}
+
+// GraceShutdown 程序正常退出，注销服务
+func (r *Center) GraceShutdown() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		select {
+		case sig := <-c:
+			{
+				log.Printf("receive signal %s, deregister service %s", sig.String(), r.opts.self.Name)
+				r.Deregister()
+				os.Exit(1)
+			}
+		}
+	}()
 }
 
 // Deregister the registration.
@@ -71,7 +94,7 @@ func (r *Center) registerWithKV(ctx context.Context, key string, value string) (
 	return grant.ID, nil
 }
 
-// heartBeat 监听心跳  也可以理解为租约的业务实现
+// heartBeat 监听心跳  通过etcd的租约机制实现
 func (r *Center) heartBeat(ctx context.Context, leaseID clientv3.LeaseID, key string, value string) {
 	curLeaseID := leaseID
 	kac, err := r.client.KeepAlive(ctx, leaseID)
