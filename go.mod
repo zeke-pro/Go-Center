@@ -1,4 +1,4 @@
-module center
+module doraemon-go
 
 go 1.19
 

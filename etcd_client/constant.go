@@ -1,4 +1,4 @@
-package constant
+package etcd_client
 
 import (
 	"github.com/google/uuid"

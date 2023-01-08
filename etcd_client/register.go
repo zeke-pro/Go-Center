@@ -1,7 +1,8 @@
-package center
+package etcd_client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -22,7 +23,8 @@ func (r *Center) Register() error {
 	ctx, cancel := context.WithTimeout(r.ctx, r.opts.registrarTimeout)
 	defer cancel()
 	key := fmt.Sprintf("%s/%s/%s/%s", r.opts.namespace, "service", r.opts.self.Name, r.opts.self.Id)
-	value, err := marshal(r.opts.self)
+	data, err := json.Marshal(r.opts.self)
+	value := string(data)
 	if err != nil {
 		return err
 	}

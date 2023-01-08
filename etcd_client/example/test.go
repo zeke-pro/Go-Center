@@ -1,9 +1,8 @@
 package main
 
 import (
-	"center"
-	"center/store"
 	"context"
+	ec "doraemon-go/etcd_client"
 	"encoding/json"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -21,7 +20,7 @@ CENTER_ADDR=127.0.0.1:2379;SERVICE_NAME=test_service;SERVICE_NAMESPACE=center
 */
 
 func main() {
-	c, err := center.NewCenter()
+	c, err := ec.NewCenter()
 	if err != nil {
 		panic(err)
 	}
@@ -30,27 +29,27 @@ func main() {
 	//addTestData(c.GetEtcdClient())
 
 	//服务发现
-	service1 := store.NewDefaultServiceStore("service1")
+	service1 := ec.NewDefaultServiceStore("service1")
 	err = c.DiscoverServices(service1)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("发现了服务")
-	for _, v := range service1.GetList() {
+	for _, v := range service1.Get() {
 		fmt.Println(v)
 	}
 
 	//配置
-	config1 := store.NewDefaultConfigStore[*TestConfig]("config1")
-	config2 := store.NewDefaultConfigStore[TestConfig]("config2")
+	config1 := ec.NewDefaultConfigStore[*TestConfig]("config1")
+	config2 := ec.NewDefaultConfigStore[TestConfig]("config2")
 	//字符串配置
-	config3 := store.NewDefaultConfigStore[string]("config3")
+	config3 := ec.NewDefaultConfigStore[string]("config3")
 	//Prefix 映射成数组
-	config4 := store.NewConfigStore[[]*TestConfig]("config4", &store.LocalConfig{Path: "config/config4.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+	config4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalStore{Path: "config/config4.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成map
-	config5 := store.NewConfigStore[map[string]*TestConfig]("config5", &store.LocalConfig{Path: "config/config5.json", SyncFile: true}, &store.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+	config5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalStore{Path: "config/config5.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成字符串数组
-	config6 := store.NewConfigStore[[]string]("config6", &store.LocalConfig{Path: "config/config6.json", SyncFile: true}, &store.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
+	config6 := ec.NewConfigStore[[]string]("config6", &ec.LocalStore{Path: "config/config6.json", SyncFile: true}, &ec.RemoteStore{Path: "config6", Prefix: true, RequireWatch: true})
 	err = c.SyncConfigs(
 		config1,
 		config2,
@@ -71,8 +70,8 @@ func main() {
 
 	//注册
 	//定义自己
-	self := center.CreateCurrentServiceFromEnv()
-	self.Endpoints = []*store.Endpoint{
+	self := ec.CreateCurrentServiceFromEnv()
+	self.Endpoints = []*ec.Endpoint{
 		{
 			Scheme:  "http",
 			Address: "127.0.0.1",
@@ -106,8 +105,8 @@ func addTestData(client *clientv3.Client) {
 		id := fmt.Sprintf("id-%d", i)
 		name := fmt.Sprintf("name-%d", i)
 		addr := fmt.Sprintf("192.168.0.%d", i)
-		service := store.Service{Id: id, Name: name}
-		service.Endpoints = []*store.Endpoint{
+		service := ec.Service{Id: id, Name: name}
+		service.Endpoints = []*ec.Endpoint{
 			{
 				Scheme:  "http",
 				Address: addr,
