@@ -92,7 +92,7 @@ func parseBytes(b []byte, resType reflect.Type) reflect.Value {
 			return reflect.Value{}
 		}
 		n.Elem().Set(child)
-	case reflect.Struct:
+	case reflect.Struct, reflect.Map, reflect.Slice, reflect.Array:
 		unmarshal := reflect.ValueOf(json.Unmarshal)
 		args := []reflect.Value{
 			reflect.ValueOf(b),

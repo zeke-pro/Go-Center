@@ -32,12 +32,12 @@ func (r *Center) DiscoverServices(stores ...IStore) error {
 			key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, "service", remote.Path)
 			err := r.requestKV(key, s)
 			if err != nil {
-				return err
+				fmt.Println(err)
 			}
 			if remote.RequireWatch {
 				e := r.watchKV(key, s)
 				if e != nil {
-					return e
+					fmt.Println(err)
 				}
 			}
 		}
