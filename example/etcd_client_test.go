@@ -16,7 +16,7 @@ type TestConfig struct {
 
 /**
 环境变量
-CENTER_ADDR=127.0.0.1:2379;SERVICE_NAME=test_service;SERVICE_NAMESPACE=center
+ETCD_ADDR=127.0.0.1:2379;SERVICE_NAME=test_service;SERVICE_NAMESPACE=center
 */
 
 func main() {
