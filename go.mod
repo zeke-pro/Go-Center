@@ -1,4 +1,4 @@
-module doraemon-go
+module github.com/zeke-pro/doraemon-go
 
 go 1.19
 

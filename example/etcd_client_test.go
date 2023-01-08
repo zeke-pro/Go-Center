@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	ec "doraemon-go/etcd_client"
 	"encoding/json"
 	"fmt"
+	ec "github.com/zeke-pro/doraemon-go"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
