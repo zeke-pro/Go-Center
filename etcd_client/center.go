@@ -52,7 +52,7 @@ func NewCenter(opts ...Option) (*Center, error) {
 		self:             nil,
 		ttl:              time.Second * 15,
 		maxRetry:         5,
-		addr:             CenterAddr,
+		addr:             EtcdAddr,
 		registrarTimeout: time.Second * 5,
 		namespace:        ServiceNamespace,
 	}

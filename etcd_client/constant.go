@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	CenterAddr       string
+	EtcdAddr         string
 	ServiceId        string
 	ServiceName      string
 	ServiceNamespace string
@@ -18,9 +18,9 @@ func init() {
 	if ConfigDir == "" {
 		ConfigDir = "./config/"
 	}
-	CenterAddr = os.Getenv("CENTER_ADDR")
-	if CenterAddr == "" {
-		CenterAddr = "127.0.0.1:2379"
+	EtcdAddr = os.Getenv("ETCD_ADDR")
+	if EtcdAddr == "" {
+		EtcdAddr = "127.0.0.1:2379"
 	}
 	ServiceId = os.Getenv("SERVICE_ID")
 	if ServiceId == "" {
