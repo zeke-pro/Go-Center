@@ -8,3 +8,49 @@
 | SERVICE_ID        | 唯一标识         | uuid           |
 | SERVICE_NAME      | * 服务名称       |                |
 | SERVICE_NAMESPACE | 命名空间         | center         |
+| IS_SSL             | 连接ETCD 是否启用TLS 证书 | false      |
+| CERT_DIR           | 证书存储目录          | cert/      |
+| CERT_KEY_FILE      | 证书存储目录          | client.key |
+| CERT_FILE          | 证书存储目录          | client.crt |
+| CERT_CA_FILE       | CA证书文件名称        | ca.crt     |
+
+
+## 证书生成和运行配置
+修改 script/pki.sh  机器IP地址清单
+```bash 
+# 生成证书,讲证书复制到certs/目录下
+./pki.sh
+```
+
+etcd.yml配置文件
+```yaml
+name: etcd01
+data-dir: data/etcd/default.etcd
+listen-peer-urls: https://192.168.31.17:2380
+listen-client-urls: https://192.168.31.17:2379,https://127.0.0.1:2379
+initial-advertise-peer-urls: https://192.168.31.17:2380
+advertise-client-url: https://192.168.31.17:2379,https://127.0.0.1:2379
+initial-cluster: etcd01=https://192.168.31.17:2380
+initial-cluster-token: etcd-cluster
+initial-cluster-state: new
+client-transport-security: 
+  cert-file:  certs/client.crt
+  key-file:   certs/client.key
+  client-cert-auth: false
+  trusted-ca-file: certs/ca.crt
+
+peer-transport-security:
+  cert-file: certs/peer.crt
+  key-file:  certs/peer.key
+  client-cert-auth: false
+  trusted-ca-file: certs/ca.crt
+  auto-tls: false
+```
+
+运行etcd
+```
+etcd  --config-file etcd.yml
+```
+
+center程序配置运行，添加环境变量```IS_SSL=true ``` ，center程序运行时证书相关变量如表格所示
+

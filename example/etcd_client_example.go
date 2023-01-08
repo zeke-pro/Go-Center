@@ -26,7 +26,7 @@ func main() {
 	}
 
 	//向etcd添加测试数据
-	//addTestData(c.GetEtcdClient())
+	addTestData(c.GetEtcdClient())
 
 	//服务发现
 	service1 := ec.NewDefaultServiceStore("service1")
