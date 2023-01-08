@@ -31,6 +31,13 @@ type ConfigStore[T any] struct {
 }
 
 func NewDefaultConfigStore[T any](name string) *ConfigStore[T] {
+	if _, err := os.Stat(constant.ConfigDir); os.IsNotExist(err) {
+		err = os.Mkdir(constant.ConfigDir, os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	filePath := path.Join(constant.ConfigDir, fmt.Sprintf("config_%s.json", name))
 	var data T
 	st := &ConfigStore[T]{
