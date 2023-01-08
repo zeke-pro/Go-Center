@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	ec "github.com/zeke-pro/doraemon-go"
+	ec "github.com/zeke-pro/doraemon-go/etcd_client"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
