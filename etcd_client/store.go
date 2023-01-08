@@ -59,6 +59,13 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 }
 
 func NewDefaultServiceStore(name string) *Store[[]*Service] {
+	if _, err := os.Stat(ConfigDir); os.IsNotExist(err) {
+		err = os.Mkdir(ConfigDir, os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	filePath := path.Join(ConfigDir, fmt.Sprintf("service_%s.json", name))
 	var data []*Service
 	sto := &Store[[]*Service]{
@@ -180,6 +187,7 @@ func (c *Store[T]) readFile() error {
 	if c.local == nil || c.local.Path == "" {
 		return nil
 	}
+
 	if b, err := os.ReadFile(c.local.Path); err == nil {
 		json.Unmarshal(b, c.data)
 	}
