@@ -106,7 +106,7 @@ func parseBytes(b []byte, resType reflect.Type) reflect.Value {
 			return reflect.Value{}
 		}
 		n.Elem().Set(child)
-	case reflect.Struct:
+	case reflect.Struct, reflect.Map, reflect.Slice, reflect.Array:
 		unmarshal := reflect.ValueOf(json.Unmarshal)
 		args := []reflect.Value{
 			reflect.ValueOf(b),
@@ -167,17 +167,19 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 
 func (c *Store[T]) Parse(kvs []*RemoteData) error {
 	var data T
-	var parsedValue reflect.Value
-	prefix := c.remote.Prefix
-	if prefix {
-		parsedValue = parseKV(kvs, reflect.TypeOf(data))
-	} else {
-		parsedValue = parseBytes(kvs[0].Value, reflect.TypeOf(data))
+	if len(kvs) > 0 {
+		var parsedValue reflect.Value
+		prefix := c.remote.Prefix
+		if prefix {
+			parsedValue = parseKV(kvs, reflect.TypeOf(data))
+		} else {
+			parsedValue = parseBytes(kvs[0].Value, reflect.TypeOf(data))
+		}
+		if !parsedValue.IsValid() {
+			return errors.New("parse failed")
+		}
+		data = parsedValue.Elem().Interface().(T)
 	}
-	if !parsedValue.IsValid() {
-		return errors.New("parse failed")
-	}
-	data = parsedValue.Elem().Interface().(T)
 	c.data = data
 	//写入文件
 	return c.saveFile()
