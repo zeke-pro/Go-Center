@@ -175,8 +175,7 @@ func (c *Store[T]) WatchRemote(center *Center, store *Store[T]) {
 	}
 
 	ctx := context.Background()
-	//TODO fullKey先写死
-	fullKey := fmt.Sprintf("%s/%s/%s/", "center", "config", store.remote.Path)
+	fullKey := getConfigKey(ServiceNamespace, store.remote.Path)
 	watchChan := center.client.Watcher.Watch(ctx, fullKey, clientv3.WithPrefix())
 	for {
 		select {
@@ -195,6 +194,11 @@ func (c *Store[T]) WatchRemote(center *Center, store *Store[T]) {
 			}
 		}
 	}
+}
+
+func getConfigKey(namespace string, path string) string {
+	key := fmt.Sprintf("%s/%s/%s", namespace, "config", path)
+	return key
 }
 
 func (c *Store[T]) Parse(kvs []*RemoteData) error {
