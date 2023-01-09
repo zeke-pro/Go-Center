@@ -1,9 +1,12 @@
 package etcd_client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.etcd.io/etcd/api/v3/mvccpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"os"
 	"path"
 	"reflect"
@@ -13,6 +16,7 @@ type RemoteStore struct {
 	Path         string
 	Prefix       bool
 	RequireWatch bool
+	Channel      chan *RemoteData
 }
 
 type LocalStore struct {
@@ -52,7 +56,7 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 		data,
 		name,
 		&LocalStore{filePath, true},
-		&RemoteStore{name, false, true},
+		&RemoteStore{name, false, true, make(chan *RemoteData)},
 	}
 	st.readFile()
 	return st
@@ -72,7 +76,7 @@ func NewDefaultServiceStore(name string) *Store[[]*Service] {
 		data,
 		name,
 		&LocalStore{filePath, true},
-		&RemoteStore{name, true, true},
+		&RemoteStore{name, true, true, make(chan *RemoteData)},
 	}
 	return sto
 }
@@ -163,6 +167,34 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 		return reflect.Value{}
 	}
 	return n
+}
+
+func (c *Store[T]) WatchRemote(center *Center, store *Store[T]) {
+	if c.remote == nil || c.remote.Path == "" {
+		return
+	}
+
+	ctx := context.Background()
+	//TODO fullKey先写死
+	fullKey := fmt.Sprintf("%s/%s/%s/", "center", "config", store.remote.Path)
+	watchChan := center.client.Watcher.Watch(ctx, fullKey, clientv3.WithPrefix())
+	for {
+		select {
+		case resp := <-watchChan:
+			for _, ev := range resp.Events {
+				switch ev.Type {
+				case mvccpb.PUT:
+					rd := &RemoteData{Key: string(ev.Kv.Key), Value: ev.Kv.Value}
+					rds := []*RemoteData{rd}
+					store.Parse(rds) //解析更新到本地
+					store.Remote().Channel <- rd
+				case mvccpb.DELETE:
+					//TODO 删除逻辑是否需要？
+					fmt.Printf("DELETE key:%s\n", ev.Kv.Key)
+				}
+			}
+		}
+	}
 }
 
 func (c *Store[T]) Parse(kvs []*RemoteData) error {

@@ -50,6 +50,7 @@ func main() {
 	config5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalStore{Path: "config/config5.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成字符串数组
 	config6 := ec.NewConfigStore[[]string]("config6", &ec.LocalStore{Path: "config/config6.json", SyncFile: true}, &ec.RemoteStore{Path: "config6", Prefix: true, RequireWatch: true})
+	config9 := ec.NewConfigStore[[]string]("config", &ec.LocalStore{Path: "config/config9.json", SyncFile: true}, &ec.RemoteStore{Path: "config9", Prefix: true, RequireWatch: true})
 	err = c.SyncConfigs(
 		config1,
 		config2,
@@ -57,7 +58,20 @@ func main() {
 		config4,
 		config5,
 		config6,
+		config9,
 	)
+
+	config9.WatchRemote(c, config9)
+
+	go func() {
+		for {
+			select {
+			case <-config9.Remote().Channel:
+				fmt.Println("config9发生变化")
+			}
+		}
+	}()
+
 	if err != nil {
 		panic(err)
 	}
@@ -130,25 +144,29 @@ func addTestData(client *clientv3.Client) {
 	}
 	//配置
 	//config1
-	b, _ := json.Marshal(&TestConfig{Name: "test", Num: 1})
-	config1Str := string(b)
-	key := fmt.Sprintf("%s/%s/%s", "center", "config", "config1")
-	client.Put(ctx, key, config1Str)
-	//config2
-	key = fmt.Sprintf("%s/%s/%s", "center", "config", "config2")
-	client.Put(ctx, key, config1Str)
-	//config3
-	key = fmt.Sprintf("%s/%s/%s", "center", "config", "config3")
-	client.Put(ctx, key, "config3-value")
-	//config4,5
-	for i := 1; i < 8; i++ {
-		key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config4", i)
-		client.Put(ctx, key, config1Str)
-	}
-	//config6
-	for i := 1; i < 8; i++ {
-		key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config6", i)
-		value := fmt.Sprintf("value-%d", i)
-		client.Put(ctx, key, value)
-	}
+	//b, _ := json.Marshal(&TestConfig{Name: "test", Num: 1})
+	//config1Str := string(b)
+	//key := fmt.Sprintf("%s/%s/%s", "center", "config", "config1")
+	//client.Put(ctx, key, config1Str)
+	////config2
+	//key = fmt.Sprintf("%s/%s/%s", "center", "config", "config2")
+	//client.Put(ctx, key, config1Str)
+	////config3
+	//key = fmt.Sprintf("%s/%s/%s", "center", "config", "config3")
+	//client.Put(ctx, key, "config3-value")
+	////config4,5
+	//for i := 1; i < 8; i++ {
+	//	key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config4", i)
+	//	client.Put(ctx, key, config1Str)
+	//}
+	////config6
+	//for i := 1; i < 8; i++ {
+	//	key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config6", i)
+	//	value := fmt.Sprintf("value-%d", i)
+	//	client.Put(ctx, key, value)
+	//}
+
+	key := fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config9", 1)
+	value := fmt.Sprintf("value-%d", 1)
+	client.Put(ctx, key, value)
 }
