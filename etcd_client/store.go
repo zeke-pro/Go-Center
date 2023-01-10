@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"log"
 	"os"
 	"path"
 	"reflect"
@@ -93,38 +94,35 @@ func NewConfigStore[T any](name string, local *LocalStore, remote *RemoteStore) 
 	store := &Store[T]{
 		data, name, local, remote,
 	}
-	if local.RequireWatch {
-		store.watchLocal()
-	}
 
 	return store
 }
 
-func (c *Store[T]) Get() T {
-	return c.data
+func (s *Store[T]) Get() T {
+	return s.data
 }
 
-func (c *Store[T]) Set(data T) error {
-	c.data = data
-	return c.saveFile()
+func (s *Store[T]) Set(data T) error {
+	s.data = data
+	return s.saveFile()
 }
 
-func (c *Store[T]) Put(key string, data T, center *Center) {
-	c.Set(data)
-	c.saveFile()
+func (s *Store[T]) Put(key string, data T, center *Center) {
+	s.Set(data)
+	s.saveFile()
 
-	value, err := c.SerializeValue(data)
+	value, err := s.SerializeValue(data)
 	if err != nil {
 		return
 	}
 
-	if c.local.RequireWatch {
-		c.local.Channel <- &RemoteData{Key: key, Value: []byte(value)}
+	if s.local.RequireWatch {
+		s.local.Channel <- &RemoteData{Key: key, Value: []byte(value)}
 	}
 
 }
 
-func (c *Store[T]) SerializeValue(value T) (string, error) {
+func (s *Store[T]) SerializeValue(value T) (string, error) {
 	//if value == nil {
 	//	return "", nil
 	//}
@@ -205,13 +203,13 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 	return n
 }
 
-func (c *Store[T]) WatchRemote(center *Center) {
-	if c.remote == nil || c.remote.Path == "" {
+func (s *Store[T]) WatchRemote(center *Center) {
+	if s.remote == nil || s.remote.Path == "" {
 		return
 	}
 
 	ctx := context.Background()
-	fullKey := getConfigKey(ServiceNamespace, c.remote.Path)
+	fullKey := getConfigKey(ServiceNamespace, s.remote.Path)
 	watchChan := center.client.Watcher.Watch(ctx, fullKey, clientv3.WithPrefix())
 	center.client.Watcher.RequestProgress(ctx)
 
@@ -224,8 +222,8 @@ func (c *Store[T]) WatchRemote(center *Center) {
 					case mvccpb.PUT:
 						rd := &RemoteData{Key: string(ev.Kv.Key), Value: ev.Kv.Value}
 						rds := []*RemoteData{rd}
-						c.Parse(rds) //解析更新到本地
-						c.Remote().Channel <- rd
+						s.Parse(rds) //解析更新到本地
+						s.Remote().Channel <- rd
 					case mvccpb.DELETE:
 						//TODO 删除逻辑是否需要？
 						fmt.Printf("DELETE key:%s\n", ev.Kv.Key)
@@ -237,21 +235,25 @@ func (c *Store[T]) WatchRemote(center *Center) {
 	}()
 }
 
-func (c *Store[T]) watchLocal() {
-	if c.local == nil || c.local.Path == "" {
-		return
-	}
-	go func() {
-		for {
-			select {
-			case rd := <-c.local.Channel:
-				rds := []*RemoteData{rd}
-				//c.Parse(rds) //解析更新到本地
-
-				fmt.Printf("WatchLocal, c.name=%s, 本地Put更新数据:%v \n", c.name, rds)
-			}
+func (s *Store[T]) WatchLocal(c *Center) {
+	if s.local.RequireWatch {
+		if s.local == nil || s.local.Path == "" {
+			return
 		}
-	}()
+		go func() {
+			for {
+				select {
+				case rd := <-s.local.Channel:
+					log.Printf("WatchLocal, s.name=%s, key=%s,value=%s \n", s.name, rd.Key, string(rd.Value))
+					fullKey := getConfigKey(ServiceNamespace, s.local.Path)
+					c.client.Put(context.Background(), fullKey, string(rd.Value))
+				}
+			}
+		}()
+	} else {
+		log.Printf("WatchLocal, s.name=%s, 不需要监听本地变化 \n", s.name)
+	}
+
 }
 
 func getConfigKey(namespace string, path string) string {
@@ -259,11 +261,11 @@ func getConfigKey(namespace string, path string) string {
 	return key
 }
 
-func (c *Store[T]) Parse(kvs []*RemoteData) error {
+func (s *Store[T]) Parse(kvs []*RemoteData) error {
 	var data T
 	if len(kvs) > 0 {
 		var parsedValue reflect.Value
-		prefix := c.remote.Prefix
+		prefix := s.remote.Prefix
 		if prefix {
 			parsedValue = parseKV(kvs, reflect.TypeOf(data))
 		} else {
@@ -274,25 +276,25 @@ func (c *Store[T]) Parse(kvs []*RemoteData) error {
 		}
 		data = parsedValue.Elem().Interface().(T)
 	}
-	c.data = data
+	s.data = data
 	//写入文件
-	return c.saveFile()
+	return s.saveFile()
 }
 
-func (c *Store[T]) readFile() error {
-	if c.local == nil || c.local.Path == "" {
+func (s *Store[T]) readFile() error {
+	if s.local == nil || s.local.Path == "" {
 		return nil
 	}
 
-	if b, err := os.ReadFile(c.local.Path); err == nil {
-		json.Unmarshal(b, c.data)
+	if b, err := os.ReadFile(s.local.Path); err == nil {
+		json.Unmarshal(b, s.data)
 	}
 	return nil
 }
 
 // 保存到本地
-func (c *Store[T]) saveFile() error {
-	l := c.Local()
+func (s *Store[T]) saveFile() error {
+	l := s.Local()
 	if l == nil || !l.SyncFile || l.Path == "" {
 		return nil
 	}
@@ -302,7 +304,7 @@ func (c *Store[T]) saveFile() error {
 		return err
 	}
 	var b []byte
-	b, err = json.Marshal(c.data)
+	b, err = json.Marshal(s.data)
 	if err != nil {
 		return err
 	}
@@ -313,10 +315,10 @@ func (c *Store[T]) saveFile() error {
 	return nil
 }
 
-func (c *Store[T]) Remote() *RemoteStore {
-	return c.remote
+func (s *Store[T]) Remote() *RemoteStore {
+	return s.remote
 }
 
-func (c *Store[T]) Local() *LocalStore {
-	return c.local
+func (s *Store[T]) Local() *LocalStore {
+	return s.local
 }
