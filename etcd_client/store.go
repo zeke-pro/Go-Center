@@ -107,6 +107,7 @@ func (s *Store[T]) Set(data T) error {
 	return s.saveFile()
 }
 
+// 更新到本地,如果Local开启RequireWatch，会触发本地监听，本地监听会更新到远端
 func (s *Store[T]) Put(key string, data T, center *Center) {
 	s.Set(data)
 	s.saveFile()

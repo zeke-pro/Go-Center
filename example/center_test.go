@@ -33,6 +33,7 @@ func TestStorePut(t *testing.T) {
 }
 
 func TestStorePutAndWatchLocal(t *testing.T) {
+	// go profile 功能
 	//go func() {
 	//	log.Println(http.ListenAndServe("localhost:6060", nil))
 	//}()
@@ -49,7 +50,8 @@ func TestStorePutAndWatchLocal(t *testing.T) {
 
 	//store2 := ec.NewDefaultConfigStore[Student]("stu_config_watch")
 	store2 := ec.NewConfigStore[Student]("stu_config_watch", &ec.LocalStore{Path: "config/stu_config_watch.json", SyncFile: true, RequireWatch: true}, &ec.RemoteStore{Path: "stu_config_watch", Prefix: false, RequireWatch: true})
-	store2.WatchLocal(c)
+	//最好是local.RequireWatch = true,自动调用WatchLocal(c),调用需要Center，比较麻烦
+	store2.WatchLocal(c) // watch local change，and sync to remote
 	store2.Put("stu", Student{Name: "stu", Age: 18}, c)
 
 	err = c.SyncConfigs(
@@ -60,9 +62,11 @@ func TestStorePutAndWatchLocal(t *testing.T) {
 		panic(err)
 	}
 
+	//第一轮更新
 	store1.Put("test", "test-new", c)
 	store2.Put("stu", Student{Name: "stu-new", Age: 19}, c)
 
+	//第二轮更新
 	store1.Put("test", "test-new-again", c)
 	store2.Put("stu", Student{Name: "stu-new-again", Age: 19}, c)
 

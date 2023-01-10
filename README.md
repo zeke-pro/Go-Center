@@ -1,6 +1,19 @@
 # 说明
-## 环境变量
+## ETCD key路径规划
+| 类型     | 一层路径  | 二层路径 | 三层路径 | 四层路径         |
+| -------- | --------- | -------- | -------- |--------------|
+| 服务 | 命名空间(统一为center) | service | store名称 | id,一般用UUID生成 | 
+| 配置 | 命名空间(统一为center) | config |  store名称 | key名称        |
 
+```
+# 配置的key名称
+center/config/myconfig/put_config.json	
+
+# 服务的key名称
+center/service/test_service/ce302a06-90e2-11ed-8cdb-8656d13e4381
+```
+
+## 环境变量
 | 名称                | 作用           | 默认值            |
 |-------------------|--------------|----------------|
 | CONFIG_DIR        | 配置文件路径       | ./config       |
