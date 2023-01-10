@@ -97,6 +97,25 @@ func (c *Store[T]) Set(data T) error {
 	return c.saveFile()
 }
 
+func (c *Store[T]) Put(key string, data T, center *Center) {
+	c.Set(data)
+	fullKey := getConfigKey(ServiceNamespace, c.name) + "/" + key
+	value, err := c.SerializeValue(data)
+	if err != nil {
+		return
+	}
+	center.client.Put(context.Background(), fullKey, value)
+}
+
+func (c *Store[T]) SerializeValue(value T) (string, error) {
+	//if value == nil {
+	//	return "", nil
+	//}
+	str, err := json.Marshal(value)
+
+	return string(str), err
+}
+
 // 不带Prefix的解析
 func parseBytes(b []byte, resType reflect.Type) reflect.Value {
 	n := reflect.New(resType)
@@ -169,31 +188,37 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 	return n
 }
 
-func (c *Store[T]) WatchRemote(center *Center, store *Store[T]) {
+func (c *Store[T]) WatchRemote(center *Center) {
 	if c.remote == nil || c.remote.Path == "" {
 		return
 	}
 
 	ctx := context.Background()
-	fullKey := getConfigKey(ServiceNamespace, store.remote.Path)
+	fullKey := getConfigKey(ServiceNamespace, c.remote.Path)
 	watchChan := center.client.Watcher.Watch(ctx, fullKey, clientv3.WithPrefix())
-	for {
-		select {
-		case resp := <-watchChan:
-			for _, ev := range resp.Events {
-				switch ev.Type {
-				case mvccpb.PUT:
-					rd := &RemoteData{Key: string(ev.Kv.Key), Value: ev.Kv.Value}
-					rds := []*RemoteData{rd}
-					store.Parse(rds) //解析更新到本地
-					store.Remote().Channel <- rd
-				case mvccpb.DELETE:
-					//TODO 删除逻辑是否需要？
-					fmt.Printf("DELETE key:%s\n", ev.Kv.Key)
+	center.client.Watcher.RequestProgress(ctx)
+
+	go func() {
+		for {
+			select {
+			case resp := <-watchChan:
+				for _, ev := range resp.Events {
+					switch ev.Type {
+					case mvccpb.PUT:
+						rd := &RemoteData{Key: string(ev.Kv.Key), Value: ev.Kv.Value}
+						rds := []*RemoteData{rd}
+						c.Parse(rds) //解析更新到本地
+						c.Remote().Channel <- rd
+					case mvccpb.DELETE:
+						//TODO 删除逻辑是否需要？
+						fmt.Printf("DELETE key:%s\n", ev.Kv.Key)
+					}
 				}
 			}
 		}
-	}
+
+	}()
+
 }
 
 func getConfigKey(namespace string, path string) string {

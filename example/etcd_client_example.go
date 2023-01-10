@@ -40,33 +40,33 @@ func main() {
 	}
 
 	//配置
-	config1 := ec.NewDefaultConfigStore[*TestConfig]("config1")
-	config2 := ec.NewDefaultConfigStore[TestConfig]("config2")
+	store1 := ec.NewDefaultConfigStore[*TestConfig]("config1")
+	store2 := ec.NewDefaultConfigStore[TestConfig]("config2")
 	//字符串配置
-	config3 := ec.NewDefaultConfigStore[string]("config3")
+	store3 := ec.NewDefaultConfigStore[string]("config3")
 	//Prefix 映射成数组
-	config4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalStore{Path: "config/config4.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
+	store4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalStore{Path: "config/config4.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成map
-	config5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalStore{Path: "config/config5.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
+	store5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalStore{Path: "config/config5.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成字符串数组
-	config6 := ec.NewConfigStore[[]string]("config6", &ec.LocalStore{Path: "config/config6.json", SyncFile: true}, &ec.RemoteStore{Path: "config6", Prefix: true, RequireWatch: true})
-	config9 := ec.NewConfigStore[[]string]("config", &ec.LocalStore{Path: "config/config9.json", SyncFile: true}, &ec.RemoteStore{Path: "config9", Prefix: true, RequireWatch: true})
+	store6 := ec.NewConfigStore[[]string]("config6", &ec.LocalStore{Path: "config/config6.json", SyncFile: true}, &ec.RemoteStore{Path: "config6", Prefix: true, RequireWatch: true})
+	store9 := ec.NewConfigStore[[]string]("config9", &ec.LocalStore{Path: "config/config9.json", SyncFile: true}, &ec.RemoteStore{Path: "config9", Prefix: true, RequireWatch: true})
 	err = c.SyncConfigs(
-		config1,
-		config2,
-		config3,
-		config4,
-		config5,
-		config6,
-		config9,
+		store1,
+		store2,
+		store3,
+		store4,
+		store5,
+		store6,
+		store9,
 	)
 
-	config9.WatchRemote(c, config9)
+	store9.WatchRemote(c)
 
 	go func() {
 		for {
 			select {
-			case <-config9.Remote().Channel:
+			case <-store9.Remote().Channel:
 				fmt.Println("config9发生变化")
 			}
 		}
@@ -75,17 +75,17 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("config1", config1.Get())
-	fmt.Println("config2", config2.Get())
-	fmt.Println("config3", config3.Get())
-	fmt.Println("config4", config4.Get())
-	fmt.Println("config5", config5.Get())
-	fmt.Println("config6", config6.Get())
+	fmt.Println("config1", store1.Get())
+	fmt.Println("config2", store2.Get())
+	fmt.Println("config3", store3.Get())
+	fmt.Println("config4", store4.Get())
+	fmt.Println("config5", store5.Get())
+	fmt.Println("config6", store6.Get())
 
 	//注册
 	//定义自己
 	self := ec.CreateCurrentServiceFromEnv()
-	self.Endpoints = []*ec.Endpoint{
+	endpoints := []*ec.Endpoint{
 		{
 			Scheme:  "http",
 			Address: "127.0.0.1",
@@ -102,20 +102,40 @@ func main() {
 			Port:    12999,
 		},
 	}
+	self.Endpoints = endpoints
+
 	c.SetSelf(self)
 	defer c.Close()
 	err = c.Register()
 	if err != nil {
 		panic(err)
 	}
+
+	//注册第二个服务
+	//self2 := ec.CreateCurrentServiceFromEnv()
+	//uid, err := uuid.NewUUID()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//self2.Id = uid.String()
+	//self2.Endpoints = endpoints
+	//c.SetSelf(self2)
+	//
+	//err = c.Register()
+	//if err != nil {
+	//	panic(err)
+	//}
+
 	for {
+
 	}
 }
 func addTestData(client *clientv3.Client) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	//服务发现数据
-	for i := 1; i < 8; i++ {
+	for i := 1; i < 3; i++ {
 		id := fmt.Sprintf("id-%d", i)
 		name := fmt.Sprintf("name-%d", i)
 		addr := fmt.Sprintf("192.168.0.%d", i)
