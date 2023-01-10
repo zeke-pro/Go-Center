@@ -2,9 +2,13 @@ package etcd_client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"io/ioutil"
+	"path"
 	"time"
 )
 
@@ -47,6 +51,42 @@ type Center struct {
 	lease  clientv3.Lease // 租约
 }
 
+func NewEtcdClientConfig() clientv3.Config {
+	if !IsSSL {
+		return clientv3.Config{
+			Endpoints:   []string{ETCDAddr},
+			DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
+		}
+	} else {
+		// 加载客户端证书
+		cert, err := tls.LoadX509KeyPair(path.Join(CertDir, CertFile), path.Join(CertDir, CertKeyFile))
+		if err != nil {
+			panic(err)
+		}
+
+		// 加载 CA 证书
+		caData, err := ioutil.ReadFile(path.Join(CertDir, CertCAFile))
+		if err != nil {
+			panic(err)
+		}
+
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(caData)
+
+		_tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			RootCAs:      pool,
+		}
+
+		return clientv3.Config{
+			Endpoints:   []string{ETCDAddr},
+			DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
+			TLS: _tlsConfig,
+		}
+	}
+
+}
+
 func NewCenter(opts ...Option) (*Center, error) {
 	op := &options{
 		self:             nil,
@@ -59,10 +99,7 @@ func NewCenter(opts ...Option) (*Center, error) {
 	for _, o := range opts {
 		o(op)
 	}
-	client, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{op.addr},
-		DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
-	})
+	client, err := clientv3.New(NewEtcdClientConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +175,11 @@ func (r *Center) requestKV(key string, store IStore) error {
 		return err
 	}
 	kv := convertKv(res.Kvs, prefix)
-	return store.Parse(kv)
+	if len(kv) > 0 {
+		return store.Parse(kv)
+	}
+	return nil
+
 }
 
 func convertKv(kvs []*mvccpb.KeyValue, prefix string) []*RemoteData {

@@ -6,7 +6,11 @@ import (
 	"errors"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"log"
 	"math/rand"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -44,8 +48,25 @@ func (r *Center) Register() error {
 		return err
 	}
 
+	go r.GraceShutdown()
 	go r.heartBeat(r.ctx, leaseID, key, value)
 	return nil
+}
+
+// GraceShutdown 程序正常退出，注销服务
+func (r *Center) GraceShutdown() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		select {
+		case sig := <-c:
+			{
+				log.Printf("receive signal %s, deregister service %s", sig.String(), r.opts.self.Name)
+				r.Deregister()
+				os.Exit(1)
+			}
+		}
+	}()
 }
 
 // Deregister the registration.
