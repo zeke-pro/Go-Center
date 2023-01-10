@@ -20,8 +20,10 @@ type RemoteStore struct {
 }
 
 type LocalStore struct {
-	Path     string
-	SyncFile bool
+	Path         string
+	SyncFile     bool
+	RequireWatch bool
+	Channel      chan *RemoteData
 }
 
 type RemoteData struct {
@@ -55,7 +57,7 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 	st := &Store[T]{
 		data,
 		name,
-		&LocalStore{filePath, true},
+		&LocalStore{filePath, true, false, nil},
 		&RemoteStore{name, false, true, make(chan *RemoteData)},
 	}
 	st.readFile()
@@ -75,7 +77,7 @@ func NewDefaultServiceStore(name string) *Store[[]*Service] {
 	sto := &Store[[]*Service]{
 		data,
 		name,
-		&LocalStore{filePath, true},
+		&LocalStore{filePath, true, false, nil},
 		&RemoteStore{name, true, true, make(chan *RemoteData)},
 	}
 	return sto
@@ -83,9 +85,19 @@ func NewDefaultServiceStore(name string) *Store[[]*Service] {
 
 func NewConfigStore[T any](name string, local *LocalStore, remote *RemoteStore) *Store[T] {
 	var data T
-	return &Store[T]{
+	if local.RequireWatch {
+		if local.Channel == nil {
+			local.Channel = make(chan *RemoteData)
+		}
+	}
+	store := &Store[T]{
 		data, name, local, remote,
 	}
+	if local.RequireWatch {
+		store.watchLocal()
+	}
+
+	return store
 }
 
 func (c *Store[T]) Get() T {
@@ -99,12 +111,17 @@ func (c *Store[T]) Set(data T) error {
 
 func (c *Store[T]) Put(key string, data T, center *Center) {
 	c.Set(data)
-	fullKey := getConfigKey(ServiceNamespace, c.name) + "/" + key
+	c.saveFile()
+
 	value, err := c.SerializeValue(data)
 	if err != nil {
 		return
 	}
-	center.client.Put(context.Background(), fullKey, value)
+
+	if c.local.RequireWatch {
+		c.local.Channel <- &RemoteData{Key: key, Value: []byte(value)}
+	}
+
 }
 
 func (c *Store[T]) SerializeValue(value T) (string, error) {
@@ -218,7 +235,23 @@ func (c *Store[T]) WatchRemote(center *Center) {
 		}
 
 	}()
+}
 
+func (c *Store[T]) watchLocal() {
+	if c.local == nil || c.local.Path == "" {
+		return
+	}
+	go func() {
+		for {
+			select {
+			case rd := <-c.local.Channel:
+				rds := []*RemoteData{rd}
+				//c.Parse(rds) //解析更新到本地
+
+				fmt.Printf("WatchLocal, c.name=%s, 本地Put更新数据:%v \n", c.name, rds)
+			}
+		}
+	}()
 }
 
 func getConfigKey(namespace string, path string) string {
