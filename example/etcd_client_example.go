@@ -45,6 +45,7 @@ func main() {
 	//字符串配置
 	store3 := ec.NewDefaultConfigStore[string]("config3")
 	//Prefix 映射成数组
+	//Prefix 映射成数组
 	store4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalStore{Path: "config/config4.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成map
 	store5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalStore{Path: "config/config5.json", SyncFile: true}, &ec.RemoteStore{Path: "config4", Prefix: true, RequireWatch: true})

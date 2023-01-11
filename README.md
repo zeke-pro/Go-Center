@@ -1,13 +1,15 @@
 # 说明
 ## ETCD key路径规划
-| 类型     | 一层路径  | 二层路径 | 三层路径 | 四层路径         |
-| -------- | --------- | -------- | -------- |--------------|
-| 服务 | 命名空间(统一为center) | service | store名称 | id,一般用UUID生成 | 
-| 配置 | 命名空间(统一为center) | config |  store名称 | key名称        |
+| 类型     | 一层路径  | 二层路径       | 三层路径    | 四层路径         |
+| -------- | --------- |------------|---------|--------------|
+| 服务 | 命名空间(统一为center) | 统一为service | 服务名称    | id,一般用UUID生成 | 
+| 配置 | 命名空间(统一为center) | 统一为config  | store名称 | key名称        |
 
 ```
 # 配置的key名称
 center/config/myconfig/put_config.json	
+# 第一、二、三层路径构成Store的路径，第四层为key的名称，完整的key为：/center/config/myconfig/put_config.json
+
 
 # 服务的key名称
 center/service/test_service/ce302a06-90e2-11ed-8cdb-8656d13e4381

@@ -1,6 +1,7 @@
 package main_test
 
 import (
+	"fmt"
 	ec "github.com/zeke-pro/doraemon-go/etcd_client"
 	_ "net/http/pprof"
 	"testing"
@@ -30,6 +31,33 @@ func TestStorePut(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func TestStorePrefix(t *testing.T) {
+	store1 := ec.NewConfigStore[string]("prefix_config", &ec.LocalStore{Path: "config/prefix_config.txt", SyncFile: true, RequireWatch: false}, &ec.RemoteStore{Path: "prefix_config", Prefix: false, RequireWatch: false})
+
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("store1.Local().Path=", store1.Local().Path)
+	fmt.Println("store1.Remote().Path=", store1.Remote().Path)
+
+	store1.Set("Test")
+	store1.Put("test", "test", c) //Local.RequireWatch=false 不会Put到远程
+	c.SyncConfigs(store1)
+
+	store2 := ec.NewConfigStore[string]("prefix_2_config", &ec.LocalStore{Path: "config/prefix_2_config.txt", SyncFile: true, RequireWatch: true}, &ec.RemoteStore{Path: "prefix_2_config", Prefix: false, RequireWatch: false})
+
+	fmt.Println("store2.Local().Path=", store2.Local().Path)
+	fmt.Println("store2.Remote().Path=", store2.Remote().Path)
+
+	store2.Set("Test")
+	store2.WatchLocal(c)
+	store2.Put("test", "test", c) //Local.RequireWatch=false 不会Put到远程
+	c.SyncConfigs(store2)
+
 }
 
 func TestStorePutAndWatchLocal(t *testing.T) {
