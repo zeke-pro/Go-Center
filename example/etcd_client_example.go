@@ -181,11 +181,11 @@ func addTestData(client *clientv3.Client) {
 	//	client.Put(ctx, key, config1Str)
 	//}
 	////config6
-	//for i := 1; i < 8; i++ {
-	//	key = fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config6", i)
-	//	value := fmt.Sprintf("value-%d", i)
-	//	client.Put(ctx, key, value)
-	//}
+	for i := 1; i < 8; i++ {
+		key := fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config6", i)
+		value := fmt.Sprintf("value-%d", i)
+		client.Put(ctx, key, value)
+	}
 
 	key := fmt.Sprintf("%s/%s/%s/key-%d", "center", "config", "config9", 1)
 	value := fmt.Sprintf("value-%d", 1)
