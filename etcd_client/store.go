@@ -13,18 +13,22 @@ import (
 	"reflect"
 )
 
-type RemoteStore struct {
+type OnChange func(newValue any, oldValue any)
+
+type RemoteConfig struct {
 	Path         string
 	Prefix       bool
-	RequireWatch bool
-	Channel      chan *RemoteData
+	RequireWatch bool             //是否watch远程变化
+	RequirePut   bool             //是否需要将set的数据put到远程
+	PutChan      chan interface{} //本地put信号
+	OnChange     *OnChange        //远程变化的回调方法（只有RequireWatch为true时有效）
 }
 
-type LocalStore struct {
+type LocalConfig struct {
 	Path         string
-	SyncFile     bool
-	RequireWatch bool
-	Channel      chan *RemoteData
+	RequireWrite bool //有更新是否写入本地配置文件
+	//RequireWatch bool
+	//Channel      chan *RemoteData
 }
 
 type RemoteData struct {
@@ -33,16 +37,17 @@ type RemoteData struct {
 }
 
 type IStore interface {
-	Remote() *RemoteStore
-	Local() *LocalStore
+	Remote() *RemoteConfig
+	Get() any
+	Local() *LocalConfig
 	Parse([]*RemoteData) error
 }
 
 type Store[T any] struct {
 	data   T
 	name   string
-	local  *LocalStore
-	remote *RemoteStore
+	local  *LocalConfig
+	remote *RemoteConfig
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
@@ -58,8 +63,8 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 	st := &Store[T]{
 		data,
 		name,
-		&LocalStore{filePath, true, false, nil},
-		&RemoteStore{name, false, true, make(chan *RemoteData)},
+		&LocalConfig{filePath, true, false, nil},
+		&RemoteConfig{name, false, true, make(chan *RemoteData)},
 	}
 	st.readFile()
 	return st
@@ -78,13 +83,13 @@ func NewDefaultServiceStore(name string) *Store[[]*Service] {
 	sto := &Store[[]*Service]{
 		data,
 		name,
-		&LocalStore{filePath, true, false, nil},
-		&RemoteStore{name, true, true, make(chan *RemoteData)},
+		&LocalConfig{filePath, true, false, nil},
+		&RemoteConfig{name, true, true, make(chan *RemoteData)},
 	}
 	return sto
 }
 
-func NewConfigStore[T any](name string, local *LocalStore, remote *RemoteStore) *Store[T] {
+func NewConfigStore[T any](name string, local *LocalConfig, remote *RemoteConfig) *Store[T] {
 	var data T
 	if local.RequireWatch {
 		if local.Channel == nil {
@@ -104,7 +109,17 @@ func (s *Store[T]) Get() T {
 
 func (s *Store[T]) Set(data T) error {
 	s.data = data
-	return s.saveFile()
+	err := s.saveFile()
+	if err != nil {
+		return err
+	}
+	if remote := s.Remote(); remote != nil {
+		if remote.RequirePut && remote.PutChan != nil {
+			//问题。。。。
+			remote.PutChan <-
+		}
+	}
+	return nil
 }
 
 // 更新到本地,如果Local开启RequireWatch，会触发本地监听，本地监听会更新到远端
@@ -296,7 +311,7 @@ func (s *Store[T]) readFile() error {
 // 保存到本地
 func (s *Store[T]) saveFile() error {
 	l := s.Local()
-	if l == nil || !l.SyncFile || l.Path == "" {
+	if l == nil || !l.RequireWrite || l.Path == "" {
 		return nil
 	}
 	file, err := os.Create(l.Path)
@@ -316,10 +331,10 @@ func (s *Store[T]) saveFile() error {
 	return nil
 }
 
-func (s *Store[T]) Remote() *RemoteStore {
+func (s *Store[T]) Remote() *RemoteConfig {
 	return s.remote
 }
 
-func (s *Store[T]) Local() *LocalStore {
+func (s *Store[T]) Local() *LocalConfig {
 	return s.local
 }

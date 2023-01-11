@@ -40,6 +40,11 @@ func (r *Center) DiscoverServices(stores ...IStore) error {
 					fmt.Println(err)
 				}
 			}
+			if remote.RequirePut {
+				if remote.PutChan == nil {
+					remote.PutChan = make(chan interface{})
+				}
+			}
 		}
 	}
 	return nil

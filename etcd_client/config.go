@@ -19,18 +19,29 @@ func (r *Center) SyncConfigs(stores ...IStore) error {
 					fmt.Println(err)
 				}
 			}
+			if remote.RequirePut {
+				if remote.PutChan == nil {
+					remote.PutChan = make(chan interface{})
+					go func() {
+						select {
+						case <-remote.PutChan:
+							//r.GetEtcdClient().Put()
+						}
+					}()
+				}
+			}
 		}
 	}
 	return nil
 }
 
-func (r *Center) Watch(store IStore) error {
-	if remote := store.Remote(); remote != nil {
-		key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, "config", remote.Path)
-		e := r.watchKV(key, store)
-		if e != nil {
-			fmt.Println(e)
-		}
-	}
-	return nil
-}
+//func (r *Center) Watch(store IStore) error {
+//	if remote := store.Remote(); remote != nil {
+//		key := fmt.Sprintf("%s/%s/%s", r.opts.namespace, "config", remote.Path)
+//		e := r.watchKV(key, store)
+//		if e != nil {
+//			fmt.Println(e)
+//		}
+//	}
+//	return nil
+//}
