@@ -27,7 +27,9 @@ func (r *Center) SyncConfigs(stores ...IStore) error {
 			if remote.RequirePut {
 				if remote.SetChan == nil {
 					remote.SetChan = make(chan interface{})
-					go func() {
+				}
+				go func() {
+					for {
 						select {
 						case setData := <-remote.SetChan:
 							str, err := json.Marshal(setData)
@@ -35,8 +37,8 @@ func (r *Center) SyncConfigs(stores ...IStore) error {
 								r.GetEtcdClient().Put(context.Background(), key, string(str))
 							}
 						}
-					}()
-				}
+					}
+				}()
 			}
 		}
 	}

@@ -102,25 +102,18 @@ func (s *Store[any]) Get() any {
 
 func (s *Store[T]) Set(data T) error {
 	s.data = data
-	err := s.saveFile()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// 更新到本地,如果Local开启RequireWatch，会触发本地监听，本地监听会更新到远端
-func (s *Store[T]) Put(key string, data T, center *Center) {
-	s.Set(data)
 	if s.local.RequireWrite {
-		s.saveFile()
+		err := s.saveFile()
+		if err != nil {
+			return err
+		}
 	}
 
 	if s.Remote().RequirePut {
 		s.Remote().SetChan <- data
 	}
 
+	return nil
 }
 
 func (s *Store[T]) SerializeValue(value T) (string, error) {
