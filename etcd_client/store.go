@@ -96,6 +96,13 @@ func NewConfigStore[T any](name string, local *LocalConfig, remote *RemoteConfig
 		remote.SetChan = make(chan interface{})
 	}
 
+	if remote.Prefix {
+		// T any T的类型必须是map,如何判断
+		if reflect.TypeOf(data).Kind() != reflect.Map {
+			panic("prefix=true, data type must be map")
+		}
+	}
+
 	return store
 }
 

@@ -162,7 +162,7 @@ func TestStoreRequireWatchArray(t *testing.T) {
 		panic(err)
 	}
 
-	store1 := ec.NewConfigStore[[]string]("array_config", &ec.LocalConfig{Path: "config/array_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "array_config", Prefix: true, RequireWatch: true, RequirePut: true})
+	store1 := ec.NewConfigStore[[]string]("array_config", &ec.LocalConfig{Path: "config/array_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "array_config", Prefix: false, RequireWatch: true, RequirePut: true})
 
 	err = c.SyncConfigs(
 		store1,
@@ -171,13 +171,35 @@ func TestStoreRequireWatchArray(t *testing.T) {
 		panic(err)
 	}
 
-	arr := []string{"one", "two", "three"}
-
-	store1.Set(arr)
-
 	var v = store1.Get()
 	fmt.Printf("v:%v\n", v)
 
+	time.Sleep(3000 * time.Second)
+}
+
+type Domain struct {
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+}
+
+func TestStorePrefix(t *testing.T) {
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[map[string]Domain]("with_prefix_config", &ec.LocalConfig{Path: "config/with_prefix_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "with_prefix_config", Prefix: true, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	var v = store1.Get()
+	fmt.Printf("v:%v\n", v)
+	
 	time.Sleep(3000 * time.Second)
 }
 
