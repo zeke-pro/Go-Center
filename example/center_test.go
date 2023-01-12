@@ -45,11 +45,9 @@ func TestStoreRequirePut(t *testing.T) {
 		panic(err)
 	}
 
-	store1 := ec.NewConfigStore[string]("put_config", &ec.LocalConfig{Path: "config/put_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "put_config", Prefix: false, RequireWatch: true})
-	//store1 := ec.NewDefaultConfigStore[string]("put_watch")
+	store1 := ec.NewConfigStore[string]("put_config", &ec.LocalConfig{Path: "config/put_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "put_config", Prefix: false, RequireWatch: false})
 
-	//store2 := ec.NewDefaultConfigStore[Student]("stu_config_watch")
-	store2 := ec.NewConfigStore[Student]("stu_config_watch", &ec.LocalConfig{Path: "config/stu_config_watch.json", RequireWrite: true}, &ec.RemoteConfig{Path: "stu_config_watch", RequirePut: true, Prefix: false, RequireWatch: true})
+	store2 := ec.NewConfigStore[Student]("stu_config_watch", &ec.LocalConfig{Path: "config/stu_config_watch.json", RequireWrite: true}, &ec.RemoteConfig{Path: "stu_config_watch", RequirePut: true, Prefix: false, RequireWatch: false})
 	//最好是local.RequireWatch = true,自动调用WatchLocal(c),调用需要Center，比较麻烦
 
 	err = c.SyncConfigs(
@@ -72,6 +70,29 @@ func TestStoreRequirePut(t *testing.T) {
 	store2.Set(Student{Name: "stu-new-again", Age: 20})
 
 	time.Sleep(5 * time.Second)
+
+}
+
+func TestStoreRequireWatch(t *testing.T) {
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[string]("require_config", &ec.LocalConfig{Path: "config/require_watch.json", RequireWrite: true}, &ec.RemoteConfig{Path: "require_watch", Prefix: false, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	store1.Set("test1")
+	store1.Set("test2")
+	store1.Set("test3")
+
+	time.Sleep(30 * time.Second)
 
 }
 

@@ -193,7 +193,7 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 	return n
 }
 
-func (s *Store[T]) WatchRemote(center *Center) {
+func (s *Store[T]) watchRemote(center *Center) {
 	if s.remote == nil || s.remote.Path == "" {
 		return
 	}
