@@ -152,11 +152,7 @@ func (r *Center) watchKV(key string, store IStore) error {
 				return
 			case <-ch:
 				//这里要第一次不执行
-				oldValue := store.
-					r.requestKV(key, store)
-				if remoteConfig.OnChange != nil {
-					remoteConfig.OnChange()
-				}
+				r.requestKV(key, store)
 			}
 		}
 	}()

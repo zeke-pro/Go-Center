@@ -45,13 +45,13 @@ func main() {
 	//字符串配置
 	store3 := ec.NewDefaultConfigStore[string]("config3")
 	//Prefix 映射成数组
-	store4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalConfig{Path: "config/config4.json", SyncFile: true}, &ec.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+	store4 := ec.NewConfigStore[[]*TestConfig]("config4", &ec.LocalConfig{Path: "config/config4.json", RequireWrite: true}, &ec.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成map
-	store5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalConfig{Path: "config/config5.json", SyncFile: true}, &ec.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
+	store5 := ec.NewConfigStore[map[string]*TestConfig]("config5", &ec.LocalConfig{Path: "config/config5.json", RequireWrite: true}, &ec.RemoteConfig{Path: "config4", Prefix: true, RequireWatch: true})
 	//Prefix 映射成字符串数组
-	store6 := ec.NewConfigStore[[]string]("config6", &ec.LocalConfig{Path: "config/config6.json", SyncFile: true}, &ec.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
-	config9_remote := &ec.RemoteConfig[[]string]{Path: "config9", Prefix: true, RequireWatch: true, OnChange: func(data []string) {}}
-	store9 := ec.NewConfigStore[[]string]("config9", &ec.LocalConfig{Path: "config/config9.json", SyncFile: true}, config9_remote)
+	store6 := ec.NewConfigStore[[]string]("config6", &ec.LocalConfig{Path: "config/config6.json", RequireWrite: true}, &ec.RemoteConfig{Path: "config6", Prefix: true, RequireWatch: true})
+	config9_remote := &ec.RemoteConfig{Path: "config9", Prefix: true, RequireWatch: true, RequirePut: false, SetChan: make(chan interface{})}
+	store9 := ec.NewConfigStore[[]string]("config9", &ec.LocalConfig{Path: "config/config9.json", RequireWrite: true}, config9_remote)
 	err = c.SyncConfigs(
 		store1,
 		store2,
@@ -62,15 +62,6 @@ func main() {
 		store9,
 	)
 	//.........
-
-	go func() {
-		for {
-			select {
-			case <-store9.Remote().Channel:
-				fmt.Println("config9发生变化")
-			}
-		}
-	}()
 
 	if err != nil {
 		panic(err)

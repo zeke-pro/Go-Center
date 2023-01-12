@@ -43,15 +43,15 @@ func TestStorePutAndWatchLocal(t *testing.T) {
 		panic(err)
 	}
 
-	store1 := ec.NewConfigStore[string]("put_config", &ec.LocalConfig{Path: "config/put_config.json", SyncFile: true, RequireWatch: true}, &ec.RemoteConfig{Path: "put_config", Prefix: false, RequireWatch: true})
+	store1 := ec.NewConfigStore[string]("put_config", &ec.LocalConfig{Path: "config/put_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "put_config", Prefix: false, RequireWatch: true})
 	//store1 := ec.NewDefaultConfigStore[string]("put_watch")
-	store1.WatchLocal(c)
+
 	store1.Put("test", "test", c)
 
 	//store2 := ec.NewDefaultConfigStore[Student]("stu_config_watch")
-	store2 := ec.NewConfigStore[Student]("stu_config_watch", &ec.LocalConfig{Path: "config/stu_config_watch.json", SyncFile: true, RequireWatch: true}, &ec.RemoteConfig{Path: "stu_config_watch", Prefix: false, RequireWatch: true})
+	store2 := ec.NewConfigStore[Student]("stu_config_watch", &ec.LocalConfig{Path: "config/stu_config_watch.json", RequireWrite: true}, &ec.RemoteConfig{Path: "stu_config_watch", Prefix: false, RequireWatch: true})
 	//最好是local.RequireWatch = true,自动调用WatchLocal(c),调用需要Center，比较麻烦
-	store2.WatchLocal(c) // watch local change，and sync to remote
+
 	store2.Put("stu", Student{Name: "stu", Age: 18}, c)
 
 	err = c.SyncConfigs(
