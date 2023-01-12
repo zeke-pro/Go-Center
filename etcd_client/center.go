@@ -7,7 +7,7 @@ import (
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
-	"io/ioutil"
+	"os"
 	"path"
 	"time"
 )
@@ -65,7 +65,7 @@ func NewEtcdClientConfig() clientv3.Config {
 		}
 
 		// 加载 CA 证书
-		caData, err := ioutil.ReadFile(path.Join(CertDir, CertCAFile))
+		caData, err := os.ReadFile(path.Join(CertDir, CertCAFile))
 		if err != nil {
 			panic(err)
 		}
@@ -134,7 +134,8 @@ func (r *Center) watchKV(key string, store IStore) error {
 		clientv3.WithRev(0),
 		clientv3.WithKeysOnly(),
 	}
-	withPrefix := store.Remote().Prefix
+	remoteConfig := store.Remote()
+	withPrefix := remoteConfig.Prefix
 	if withPrefix {
 		args = append(args, clientv3.WithPrefix())
 	}
@@ -151,7 +152,6 @@ func (r *Center) watchKV(key string, store IStore) error {
 				return
 			case <-ch:
 				//这里要第一次不执行
-				//................
 				r.requestKV(key, store)
 			}
 		}

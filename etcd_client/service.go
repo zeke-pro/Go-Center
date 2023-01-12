@@ -40,6 +40,7 @@ func (r *Center) DiscoverServices(stores ...IStore) error {
 					fmt.Println(err)
 				}
 			}
+
 		}
 	}
 	return nil

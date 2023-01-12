@@ -7,24 +7,27 @@ import (
 	"fmt"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"log"
 	"os"
 	"path"
 	"reflect"
 )
 
-type RemoteStore struct {
+type OnChange func(newValue any, oldValue any)
+
+type RemoteConfig struct {
 	Path         string
 	Prefix       bool
-	RequireWatch bool
-	Channel      chan *RemoteData
+	RequireWatch bool             //是否watch远程变化
+	RequirePut   bool             //是否需要将set的数据put到远程
+	SetChan      chan interface{} //RequirePut为true时不能为nil,set时要往里面发信号
+
 }
 
-type LocalStore struct {
+type LocalConfig struct {
 	Path         string
-	SyncFile     bool
-	RequireWatch bool
-	Channel      chan *RemoteData
+	RequireWrite bool //有更新是否写入本地配置文件
+	//RequireWatch bool
+	//Channel      chan *RemoteData
 }
 
 type RemoteData struct {
@@ -33,16 +36,16 @@ type RemoteData struct {
 }
 
 type IStore interface {
-	Remote() *RemoteStore
-	Local() *LocalStore
+	Remote() *RemoteConfig
+	Local() *LocalConfig
 	Parse([]*RemoteData) error
 }
 
 type Store[T any] struct {
 	data   T
 	name   string
-	local  *LocalStore
-	remote *RemoteStore
+	local  *LocalConfig
+	remote *RemoteConfig
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
@@ -58,8 +61,8 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 	st := &Store[T]{
 		data,
 		name,
-		&LocalStore{filePath, true, false, nil},
-		&RemoteStore{name, false, true, make(chan *RemoteData)},
+		&LocalConfig{filePath, false},
+		&RemoteConfig{filePath, false, true, false, make(chan interface{})},
 	}
 	st.readFile()
 	return st
@@ -78,57 +81,46 @@ func NewDefaultServiceStore(name string) *Store[[]*Service] {
 	sto := &Store[[]*Service]{
 		data,
 		name,
-		&LocalStore{filePath, true, false, nil},
-		&RemoteStore{name, true, true, make(chan *RemoteData)},
+		&LocalConfig{filePath, false},
+		&RemoteConfig{filePath, false, true, false, make(chan interface{})},
 	}
 	return sto
 }
 
-func NewConfigStore[T any](name string, local *LocalStore, remote *RemoteStore) *Store[T] {
+func NewConfigStore[T any](name string, local *LocalConfig, remote *RemoteConfig) *Store[T] {
 	var data T
-	if local.RequireWatch {
-		if local.Channel == nil {
-			local.Channel = make(chan *RemoteData)
-		}
-	}
 	store := &Store[T]{
 		data, name, local, remote,
+	}
+	if remote.RequirePut {
+		remote.SetChan = make(chan interface{})
 	}
 
 	return store
 }
 
-func (s *Store[T]) Get() T {
+func (s *Store[any]) Get() any {
 	return s.data
 }
 
 func (s *Store[T]) Set(data T) error {
 	s.data = data
-	return s.saveFile()
-}
-
-// 更新到本地,如果Local开启RequireWatch，会触发本地监听，本地监听会更新到远端
-func (s *Store[T]) Put(key string, data T, center *Center) {
-	s.Set(data)
-	s.saveFile()
-
-	value, err := s.SerializeValue(data)
-	if err != nil {
-		return
+	if s.local.RequireWrite {
+		err := s.saveFile()
+		if err != nil {
+			return err
+		}
 	}
 
-	if s.local.RequireWatch {
-		s.local.Channel <- &RemoteData{Key: key, Value: []byte(value)}
+	if s.Remote().RequirePut {
+		s.Remote().SetChan <- data
 	}
 
+	return nil
 }
 
 func (s *Store[T]) SerializeValue(value T) (string, error) {
-	//if value == nil {
-	//	return "", nil
-	//}
 	str, err := json.Marshal(value)
-
 	return string(str), err
 }
 
@@ -204,7 +196,7 @@ func parseKV(kvs []*RemoteData, resType reflect.Type) reflect.Value {
 	return n
 }
 
-func (s *Store[T]) WatchRemote(center *Center) {
+func (s *Store[T]) watchRemote(center *Center) {
 	if s.remote == nil || s.remote.Path == "" {
 		return
 	}
@@ -224,7 +216,7 @@ func (s *Store[T]) WatchRemote(center *Center) {
 						rd := &RemoteData{Key: string(ev.Kv.Key), Value: ev.Kv.Value}
 						rds := []*RemoteData{rd}
 						s.Parse(rds) //解析更新到本地
-						s.Remote().Channel <- rd
+						s.Remote().SetChan <- rd
 					case mvccpb.DELETE:
 						//TODO 删除逻辑是否需要？
 						fmt.Printf("DELETE key:%s\n", ev.Kv.Key)
@@ -234,27 +226,6 @@ func (s *Store[T]) WatchRemote(center *Center) {
 		}
 
 	}()
-}
-
-func (s *Store[T]) WatchLocal(c *Center) {
-	if s.local.RequireWatch {
-		if s.local == nil || s.local.Path == "" {
-			return
-		}
-		go func() {
-			for {
-				select {
-				case rd := <-s.local.Channel:
-					log.Printf("WatchLocal, s.name=%s, key=%s,value=%s \n", s.name, rd.Key, string(rd.Value))
-					fullKey := getConfigKey(ServiceNamespace, s.local.Path)
-					c.client.Put(context.Background(), fullKey, string(rd.Value))
-				}
-			}
-		}()
-	} else {
-		log.Printf("WatchLocal, s.name=%s, 不需要监听本地变化 \n", s.name)
-	}
-
 }
 
 func getConfigKey(namespace string, path string) string {
@@ -296,7 +267,7 @@ func (s *Store[T]) readFile() error {
 // 保存到本地
 func (s *Store[T]) saveFile() error {
 	l := s.Local()
-	if l == nil || !l.SyncFile || l.Path == "" {
+	if l == nil || !l.RequireWrite || l.Path == "" {
 		return nil
 	}
 	file, err := os.Create(l.Path)
@@ -316,10 +287,10 @@ func (s *Store[T]) saveFile() error {
 	return nil
 }
 
-func (s *Store[T]) Remote() *RemoteStore {
+func (s *Store[T]) Remote() *RemoteConfig {
 	return s.remote
 }
 
-func (s *Store[T]) Local() *LocalStore {
+func (s *Store[T]) Local() *LocalConfig {
 	return s.local
 }
