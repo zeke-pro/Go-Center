@@ -75,7 +75,7 @@ func TestStoreRequirePut(t *testing.T) {
 
 }
 
-func TestStoreRequireWatch(t *testing.T) {
+func TestStoreRequireWatchString(t *testing.T) {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
@@ -102,6 +102,83 @@ func TestStoreRequireWatch(t *testing.T) {
 
 	time.Sleep(3000 * time.Second)
 
+}
+
+func TestStoreRequireWatchStruct(t *testing.T) {
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[Student]("require_stu_config", &ec.LocalConfig{Path: "config/require_watch_stu.json", RequireWrite: true}, &ec.RemoteConfig{Path: "require_stu_watch", Prefix: false, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	store1.Set(Student{Name: "stu1", Age: 18})
+	store1.Set(Student{Name: "stu1", Age: 19})
+	var v = store1.Get()
+	fmt.Printf("v:%v\n", v)
+
+	time.Sleep(3000 * time.Second)
+}
+
+func TestStoreRequireWatchMap(t *testing.T) {
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[map[string]string]("map_config", &ec.LocalConfig{Path: "config/map_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "map_config", Prefix: false, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	map1 := make(map[string]string)
+	map1["one"] = "yi"
+	map1["two"] = "er"
+	map1["three"] = "san"
+
+	store1.Set(map1)
+
+	var v = store1.Get()
+	fmt.Printf("v:%v\n", v)
+
+	time.Sleep(3000 * time.Second)
+}
+
+func TestStoreRequireWatchArray(t *testing.T) {
+
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[[]string]("array_config", &ec.LocalConfig{Path: "config/array_config.json", RequireWrite: true}, &ec.RemoteConfig{Path: "array_config", Prefix: true, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	arr := []string{"one", "two", "three"}
+
+	store1.Set(arr)
+
+	var v = store1.Get()
+	fmt.Printf("v:%v\n", v)
+
+	time.Sleep(3000 * time.Second)
 }
 
 func TestService(t *testing.T) {
