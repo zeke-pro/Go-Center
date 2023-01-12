@@ -31,10 +31,13 @@ func (r *Center) SyncConfigs(stores ...IStore) error {
 				go func() {
 					for {
 						select {
-						case setData := <-remote.SetChan:
-							str, err := json.Marshal(setData)
-							if err != nil {
-								r.GetEtcdClient().Put(context.Background(), key, string(str))
+						case data := <-remote.SetChan:
+							str, err := json.Marshal(data)
+							if err == nil {
+								_, err2 := r.GetEtcdClient().Put(context.Background(), key, string(str))
+								if err2 != nil {
+									fmt.Println(err2)
+								}
 							}
 						}
 					}

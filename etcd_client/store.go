@@ -92,6 +92,9 @@ func NewConfigStore[T any](name string, local *LocalConfig, remote *RemoteConfig
 	store := &Store[T]{
 		data, name, local, remote,
 	}
+	if remote.RequirePut {
+		remote.SetChan = make(chan interface{})
+	}
 
 	return store
 }

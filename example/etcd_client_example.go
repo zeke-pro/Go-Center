@@ -20,6 +20,7 @@ ETCD_ADDR=127.0.0.1:2379;SERVICE_NAME=test_service;SERVICE_NAMESPACE=center
 */
 
 func main() {
+
 	c, err := ec.NewCenter()
 	if err != nil {
 		panic(err)

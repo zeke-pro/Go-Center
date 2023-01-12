@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	ec "github.com/zeke-pro/doraemon-go/etcd_client"
+	"log"
+	"net/http"
 	_ "net/http/pprof"
 	"testing"
 	"time"
@@ -74,6 +76,10 @@ func TestStoreRequirePut(t *testing.T) {
 }
 
 func TestStoreRequireWatch(t *testing.T) {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	c, err := ec.NewCenter()
 	if err != nil {
 		panic(err)
@@ -91,8 +97,10 @@ func TestStoreRequireWatch(t *testing.T) {
 	store1.Set("test1")
 	store1.Set("test2")
 	store1.Set("test3")
+	var v string = store1.Get()
+	fmt.Printf("v:%v\n", v)
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(3000 * time.Second)
 
 }
 
