@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 )
 
 type OnChange func(newValue any, oldValue any)
@@ -155,7 +156,9 @@ func parseBytes(b []byte, resType reflect.Type) reflect.Value {
 			return reflect.Value{}
 		}
 	case reflect.String:
-		n.Elem().SetString(string(b))
+		str := string(b)
+		str = strings.Trim(str, "\"") //去掉双引号,否则 "test3" 会变成  "\"test3\""
+		n.Elem().SetString(str)
 	default:
 		return reflect.Value{}
 	}

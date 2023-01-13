@@ -3,6 +3,7 @@ package main_test
 import (
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	ec "github.com/zeke-pro/doraemon-go/etcd_client"
 	"log"
 	"net/http"
@@ -95,12 +96,61 @@ func TestStoreRequireWatchString(t *testing.T) {
 	}
 
 	store1.Set("test1")
-	store1.Set("test2")
-	store1.Set("test3")
-	var v string = store1.Get()
-	fmt.Printf("v:%v\n", v)
+	time.Sleep(1 * time.Second)
+	str1 := store1.Get()
+	assert.Equal(t, "test1", str1)
 
-	time.Sleep(3000 * time.Second)
+	store1.Set("test2")
+	time.Sleep(1 * time.Second)
+	str2 := store1.Get()
+	assert.Equal(t, "test2", str2)
+
+	store1.Set("test3")
+	time.Sleep(1 * time.Second)
+	str3 := store1.Get()
+	assert.Equal(t, "test3", str3)
+	fmt.Printf("v:%v\n", str3)
+
+	time.Sleep(5 * time.Second)
+
+}
+
+func TestStoreRequireWatchInt(t *testing.T) {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
+	c, err := ec.NewCenter()
+	if err != nil {
+		panic(err)
+	}
+
+	store1 := ec.NewConfigStore[int]("require_config_int", &ec.LocalConfig{Path: "config/require_watch_int.json", RequireWrite: true}, &ec.RemoteConfig{Path: "require_watch_int", Prefix: false, RequireWatch: true, RequirePut: true})
+
+	err = c.SyncConfigs(
+		store1,
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	store1.Set(1)
+	time.Sleep(1 * time.Second)
+	str1 := store1.Get()
+	assert.Equal(t, 1, str1)
+
+	store1.Set(2)
+	time.Sleep(1 * time.Second)
+	str2 := store1.Get()
+	assert.Equal(t, 2, str2)
+
+	store1.Set(3)
+	time.Sleep(1 * time.Second)
+	str3 := store1.Get()
+	assert.Equal(t, 3, str3)
+	fmt.Printf("v:%v\n", str3)
+
+	time.Sleep(5 * time.Second)
 
 }
 
@@ -124,7 +174,7 @@ func TestStoreRequireWatchStruct(t *testing.T) {
 	var v = store1.Get()
 	fmt.Printf("v:%v\n", v)
 
-	time.Sleep(3000 * time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 func TestStoreRequireWatchMap(t *testing.T) {
@@ -152,7 +202,7 @@ func TestStoreRequireWatchMap(t *testing.T) {
 	var v = store1.Get()
 	fmt.Printf("v:%v\n", v)
 
-	time.Sleep(3000 * time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 func TestStoreRequireWatchArray(t *testing.T) {
@@ -174,7 +224,7 @@ func TestStoreRequireWatchArray(t *testing.T) {
 	var v = store1.Get()
 	fmt.Printf("v:%v\n", v)
 
-	time.Sleep(3000 * time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 type Domain struct {
@@ -199,8 +249,8 @@ func TestStorePrefix(t *testing.T) {
 
 	var v = store1.Get()
 	fmt.Printf("v:%v\n", v)
-	
-	time.Sleep(3000 * time.Second)
+
+	time.Sleep(5 * time.Second)
 }
 
 func TestService(t *testing.T) {
@@ -252,6 +302,6 @@ func TestService(t *testing.T) {
 	c.SetSelf(&testService)
 	c.Register()
 
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second * 5)
 
 }
