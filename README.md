@@ -19,7 +19,7 @@ center/service/test_service/ce302a06-90e2-11ed-8cdb-8656d13e4381
 | CONFIG_DIR        | 配置文件路径       | ./config       |
 | ETCD_ADDR         | ETCD地址(带端口号) |127.0.0.1:2379|
 | SERVICE_ID        | 唯一标识         | uuid           |
-| SERVICE_NAME      | * 服务名称       |                |
+| SERVICE_NAME      | 服务名称       |                |
 | SERVICE_NAMESPACE | 命名空间         | center         |
 | IS_SSL             | 连接ETCD 是否启用TLS 证书 | false      |
 | CERT_DIR           | 证书存储目录          | cert/      |

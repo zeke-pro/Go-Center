@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"go.etcd.io/etcd/api/v3/mvccpb"
+	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
+	"log"
 	"os"
 	"path"
 	"time"
@@ -16,21 +17,10 @@ import (
 type Option func(o *options)
 
 type options struct {
-	self             *Service
 	ttl              time.Duration
 	maxRetry         int    // 最大重试次数
 	addr             string //暂时不做冗余，只用一个地址
 	registrarTimeout time.Duration
-	namespace        string
-}
-
-// Namespace with center namespace
-func Namespace(namespace string) Option {
-	return func(o *options) { o.namespace = namespace }
-}
-
-func CurrentService(service *Service) Option {
-	return func(o *options) { o.self = service }
 }
 
 // RegisterTTL with register ttl.
@@ -43,12 +33,11 @@ func MaxRetry(num int) Option {
 }
 
 type Center struct {
-	opts   *options
-	ctx    context.Context
-	cancel func()
-	client *clientv3.Client
-	kv     clientv3.KV
-	lease  clientv3.Lease // 租约
+	opts      *options
+	regKey    string
+	regCancel func()
+	leaseId   clientv3.LeaseID // 服务注册的租约Id
+	client    *clientv3.Client
 }
 
 func NewEtcdClientConfig() clientv3.Config {
@@ -84,17 +73,14 @@ func NewEtcdClientConfig() clientv3.Config {
 			TLS: _tlsConfig,
 		}
 	}
-
 }
 
 func NewCenter(opts ...Option) (*Center, error) {
 	op := &options{
-		self:             nil,
 		ttl:              time.Second * 15,
 		maxRetry:         5,
 		addr:             EtcdAddr,
 		registrarTimeout: time.Second * 5,
-		namespace:        ServiceNamespace,
 	}
 	for _, o := range opts {
 		o(op)
@@ -103,25 +89,22 @@ func NewCenter(opts ...Option) (*Center, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Center{
 		opts:   op,
 		client: client,
-		kv:     clientv3.NewKV(client),
-		ctx:    ctx,
-		cancel: cancel,
 	}, nil
 }
 
 func (r *Center) Close() error {
-	r.Deregister()
-	r.client.Close()
-	r.cancel()
+	err := r.Deregister()
+	if err != nil {
+		return err
+	}
+	err = r.client.Close()
+	if err != nil {
+		return err
+	}
 	return nil
-}
-
-func (r *Center) SetSelf(service *Service) {
-	r.opts.self = service
 }
 
 func (r *Center) GetEtcdClient() *clientv3.Client {
@@ -129,7 +112,8 @@ func (r *Center) GetEtcdClient() *clientv3.Client {
 }
 
 // 监听
-func (r *Center) watchKV(key string, store IStore) error {
+func (r *Center) watchKV(store IStore) {
+	key := store.Remote().Key
 	args := []clientv3.OpOption{
 		clientv3.WithRev(0),
 		clientv3.WithKeysOnly(),
@@ -139,56 +123,55 @@ func (r *Center) watchKV(key string, store IStore) error {
 	if withPrefix {
 		args = append(args, clientv3.WithPrefix())
 	}
-	watcher := clientv3.NewWatcher(r.client)
-	ch := watcher.Watch(r.ctx, key, args...)
-	err := watcher.RequestProgress(context.Background())
-	if err != nil {
-		return err
-	}
+	ch := r.client.Watch(r.client.Ctx(), key, args...)
 	go func() {
-		for {
-			select {
-			case <-r.ctx.Done():
-				return
-			case <-ch:
-				//这里要第一次不执行
-				r.requestKV(key, store)
+		for wresp := range ch {
+			version := wresp.Header.Revision
+			if version != store.GetVersion() {
+				err := r.requestKV(store)
+				if err != nil {
+					log.Printf("the request failed after listening to the data,current key is %s \n", key)
+				}
 			}
+			//for _, ev := range wresp.Events {
+			//	switch ev.Type {
+			//	case mvccpb.PUT:
+			//		fmt.Printf("%s %q : %q isModify:%s \n", ev.Type, ev.Kv.Key, ev.Kv.Value, ev.IsModify())
+			//	case mvccpb.DELETE:
+			//	}
+			//}
 		}
 	}()
-	return nil
 }
 
 // 获取
-func (r *Center) requestKV(key string, store IStore) error {
-	ctx, cancel := context.WithTimeout(r.ctx, time.Second*5)
+func (r *Center) requestKV(store IStore) error {
+	key := store.Remote().Key
+	ctx, cancel := context.WithTimeout(r.client.Ctx(), time.Second*5)
 	defer cancel()
 	args := make([]clientv3.OpOption, 0, 1)
 	withPrefix := store.Remote().Prefix
-	prefix := ""
 	if withPrefix {
 		args = append(args, clientv3.WithPrefix())
-		prefix = key + "/"
 	}
-	res, err := r.kv.Get(ctx, key, args...)
+	res, err := r.client.Get(ctx, key, args...)
 	if err != nil {
 		return err
 	}
-	kv := convertKv(res.Kvs, prefix)
-	if len(kv) > 0 {
-		return store.Parse(kv)
-	}
-	return nil
-
+	return store.ReceiveData(res.Kvs, res.Header.Revision)
 }
 
-func convertKv(kvs []*mvccpb.KeyValue, prefix string) []*RemoteData {
-	r := make([]*RemoteData, len(kvs), len(kvs))
-	for i, vv := range kvs {
-		key := string(vv.Key)
-		key = key[len(prefix):]
-		value := vv.Value
-		r[i] = &RemoteData{key, value}
+func (r *Center) SetStores(stores ...IStore) error {
+	for _, s := range stores {
+		if remote := s.Remote(); remote != nil {
+			err := r.requestKV(s)
+			if err != nil {
+				fmt.Println(err)
+			}
+			if remote.RequireWatch {
+				r.watchKV(s)
+			}
+		}
 	}
-	return r
+	return nil
 }

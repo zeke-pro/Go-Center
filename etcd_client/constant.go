@@ -29,6 +29,12 @@ func init() {
 	if ConfigDir == "" {
 		ConfigDir = "./config/"
 	}
+	if _, err := os.Stat(ConfigDir); os.IsNotExist(err) {
+		err = os.Mkdir(ConfigDir, os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+	}
 	EtcdAddr = os.Getenv("ETCD_ADDR")
 	if EtcdAddr == "" {
 		EtcdAddr = "127.0.0.1:2379"
@@ -66,5 +72,4 @@ func init() {
 			CertCAFile = "ca.crt"
 		}
 	}
-
 }
