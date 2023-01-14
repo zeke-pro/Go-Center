@@ -55,7 +55,7 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 	return st
 }
 
-type ServiceStore Store[[]*Service]
+type ServiceStore = Store[[]*Service]
 
 func NewDefaultServiceStore(name string) *ServiceStore {
 	filePath := path.Join(ConfigDir, fmt.Sprintf("service_%s.json", name))
