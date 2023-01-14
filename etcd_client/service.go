@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"math/rand"
+	"time"
 )
 
 type Endpoint struct {
@@ -30,6 +32,7 @@ func NewCurrentService() *Service {
 
 // Register 服务注册
 func (r *Center) Register(service *Service) error {
+	r.Deregister()
 	if service == nil {
 		return errors.New("no self service defined")
 	}
@@ -50,54 +53,105 @@ func (r *Center) Register(service *Service) error {
 	ctx, cancel := context.WithTimeout(r.client.Ctx(), r.opts.registrarTimeout)
 	defer cancel()
 
-	//已注册过
-	if r.leaseId != 0 {
-		_, err = r.client.Put(ctx, key, value, clientv3.WithLease(r.leaseId))
-		if err != nil {
-			return err
-		}
-		r.regKey = key
-		return nil
-	}
-
-	// 创建租约
-	leaseResp, er := r.client.Grant(ctx, int64(r.opts.ttl.Seconds()))
-	if er != nil {
-		return er
-	}
-
-	leaseId := leaseResp.ID
-
 	// 写入etcd
-	_, err = r.client.Put(ctx, key, value, clientv3.WithLease(leaseId))
+	leaseId, err := r.registerWithKV(ctx, key, value)
 	if err != nil {
 		return err
 	}
+
 	regCtx, regCancel := context.WithCancel(r.client.Ctx())
-	alive, err := r.client.KeepAlive(regCtx, leaseId)
-	go func() {
-		for {
-			select {
-			case <-regCtx.Done():
-				return
-			case <-r.client.Ctx().Done():
-				return
-			case _, ok := <-alive:
-				if !ok {
-					return
-				}
-			}
-		}
-	}()
 
 	r.leaseId = leaseId
 	r.regCancel = regCancel
 	r.regKey = key
+	go r.heartBeat(regCtx, leaseId, key, value)
 	return nil
+}
+
+// registerWithKV create a new lease, return current leaseID
+func (r *Center) registerWithKV(ctx context.Context, key string, value string) (clientv3.LeaseID, error) {
+	grant, err := r.client.Grant(ctx, int64(r.opts.ttl.Seconds()))
+	if err != nil {
+		return 0, err
+	}
+	_, err = r.client.Put(ctx, key, value, clientv3.WithLease(grant.ID))
+	if err != nil {
+		return 0, err
+	}
+	return grant.ID, nil
+}
+
+func (r *Center) heartBeat(ctx context.Context, leaseID clientv3.LeaseID, key string, value string) {
+	curLeaseID := leaseID
+	kac, err := r.client.KeepAlive(ctx, leaseID)
+	if err != nil {
+		curLeaseID = 0
+	}
+	rand.Seed(time.Now().Unix())
+
+	for {
+		if curLeaseID == 0 {
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				// prevent infinite blocking
+				idChan := make(chan clientv3.LeaseID, 1)
+				errChan := make(chan error, 1)
+				cancelCtx, cancel := context.WithCancel(ctx)
+				go func() {
+					defer cancel()
+					id, registerErr := r.registerWithKV(cancelCtx, key, value)
+					r.leaseId = id
+					if registerErr != nil {
+						errChan <- registerErr
+					} else {
+						idChan <- id
+					}
+				}()
+
+				select {
+				case <-time.After(3 * time.Second):
+					cancel()
+					continue
+				case <-errChan:
+					continue
+				case curLeaseID = <-idChan:
+				}
+
+				//keepalive创建成功，跳出当前循环
+				kac, err = r.client.KeepAlive(ctx, curLeaseID)
+				if err == nil {
+					break
+				}
+				time.Sleep(10 * time.Second)
+			}
+		}
+
+		select {
+		case _, ok := <-kac:
+			if !ok {
+				if ctx.Err() != nil {
+					// channel closed due to context cancel
+					return
+				}
+				// need to retry registration
+				curLeaseID = 0
+				continue
+			}
+		case <-ctx.Done():
+			return
+		case <-r.client.Ctx().Done():
+			return
+		}
+	}
 }
 
 // Deregister the registration.
 func (r *Center) Deregister() error {
+	if r.regCancel != nil {
+		r.regCancel()
+	}
 	ctx, cancel := context.WithTimeout(r.client.Ctx(), r.opts.registrarTimeout)
 	defer cancel()
 	if r.regKey != "" {
@@ -114,6 +168,5 @@ func (r *Center) Deregister() error {
 		}
 		r.leaseId = 0
 	}
-	r.regCancel()
 	return nil
 }

@@ -17,8 +17,8 @@ import (
 type Option func(o *options)
 
 type options struct {
-	ttl              time.Duration
-	maxRetry         int    // 最大重试次数
+	ttl time.Duration
+	//maxRetry         int    // 最大重试次数
 	addr             string //暂时不做冗余，只用一个地址
 	registrarTimeout time.Duration
 }
@@ -28,16 +28,16 @@ func RegisterTTL(ttl time.Duration) Option {
 	return func(o *options) { o.ttl = ttl }
 }
 
-func MaxRetry(num int) Option {
-	return func(o *options) { o.maxRetry = num }
-}
+//func MaxRetry(num int) Option {
+//	return func(o *options) { o.maxRetry = num }
+//}
 
 type Center struct {
 	opts      *options
+	client    *clientv3.Client
 	regKey    string
 	regCancel func()
-	leaseId   clientv3.LeaseID // 服务注册的租约Id
-	client    *clientv3.Client
+	leaseId   clientv3.LeaseID
 }
 
 func NewEtcdClientConfig() clientv3.Config {
@@ -78,7 +78,6 @@ func NewEtcdClientConfig() clientv3.Config {
 func NewCenter(opts ...Option) (*Center, error) {
 	op := &options{
 		ttl:              time.Second * 15,
-		maxRetry:         5,
 		addr:             EtcdAddr,
 		registrarTimeout: time.Second * 5,
 	}
