@@ -57,6 +57,7 @@ func (r *Center) Register(service *Service) error {
 			return err
 		}
 		r.regKey = key
+		return nil
 	}
 
 	// 创建租约

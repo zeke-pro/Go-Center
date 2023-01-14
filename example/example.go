@@ -23,6 +23,4 @@ func main() {
 		fmt.Println(nv)
 		fmt.Println(ov)
 	})
-	for {
-	}
 }
