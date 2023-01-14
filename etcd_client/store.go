@@ -23,9 +23,9 @@ type LocalConfig struct {
 	RequireWrite bool   //有更新是否写入本地配置文件
 }
 
-type PutData struct {
-	Key   string
-	Value string
+type ReceivedData[T any] struct {
+	OldData T
+	NewData T
 }
 
 type IStore interface {
@@ -36,11 +36,11 @@ type IStore interface {
 }
 
 type Store[T any] struct {
-	data       T
-	version    int64
-	local      *LocalConfig
-	remote     *RemoteConfig
-	onReceived func(newValue T, oldValue T)
+	data          T
+	version       int64
+	local         *LocalConfig
+	remote        *RemoteConfig
+	recNotifyList []chan *ReceivedData[T]
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
@@ -69,8 +69,10 @@ func NewDefaultServiceStore(name string) *ServiceStore {
 	return sto
 }
 
-func (s *Store[T]) OnReceived(onReceived func(newValue T, oldValue T)) {
-	s.onReceived = onReceived
+func (s *Store[T]) ReceivedNotify() <-chan *ReceivedData[T] {
+	ch := make(chan *ReceivedData[T])
+	s.recNotifyList = append(s.recNotifyList, ch)
+	return ch
 }
 
 func (s *Store[T]) GetVersion() int64 {
@@ -173,8 +175,13 @@ func (s *Store[T]) ReceiveData(kvs []*mvccpb.KeyValue, version int64) error {
 		data = parsedValue.Elem().Interface().(T)
 	}
 	//原始版本非0
-	if s.onReceived != nil && s.version != 0 {
-		s.onReceived(s.data, data)
+	if len(s.recNotifyList) > 0 && s.version != 0 {
+		for _, notify := range s.recNotifyList {
+			notify <- &ReceivedData[T]{
+				NewData: data,
+				OldData: s.data,
+			}
+		}
 	}
 	s.data = data
 	s.version = version
