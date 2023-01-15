@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/google/uuid v1.3.0
-	github.com/stretchr/testify v1.7.0
 	go.etcd.io/etcd/api/v3 v3.5.6
 	go.etcd.io/etcd/client/v3 v3.5.6
 	google.golang.org/grpc v1.51.0

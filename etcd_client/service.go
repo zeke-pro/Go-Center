@@ -14,7 +14,7 @@ type Endpoint struct {
 	Scheme  string `json:"scheme"`
 	Address string `json:"address"`
 	Port    int    `json:"port"`
-	Tag     string `json:"name"`
+	Tag     string `json:"tag"`
 }
 
 type Service struct {
