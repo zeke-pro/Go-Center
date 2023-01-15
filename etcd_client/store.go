@@ -46,8 +46,8 @@ type Store[T any] struct {
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
-	filePath := path.Join(ConfigDir, fmt.Sprintf("config_%s.json", name))
-	key := fmt.Sprintf("%s/%s/%s", ServiceNamespace, "config", name)
+	filePath := path.Join(envConfInstance.ConfigDir, fmt.Sprintf("config_%s.json", name))
+	key := fmt.Sprintf("%s/%s/%s", envConfInstance.ServiceNamespace, "config", name)
 	var data T
 	st := &Store[T]{
 		m:           sync.RWMutex{},
@@ -62,8 +62,8 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 type ServiceStore = Store[[]*Service]
 
 func NewDefaultServiceStore(name string) *ServiceStore {
-	filePath := path.Join(ConfigDir, fmt.Sprintf("service_%s.json", name))
-	key := fmt.Sprintf("%s/%s/%s", ServiceNamespace, "service", name)
+	filePath := path.Join(envConfInstance.ConfigDir, fmt.Sprintf("service_%s.json", name))
+	key := fmt.Sprintf("%s/%s/%s", envConfInstance.ServiceNamespace, "service", name)
 	var data []*Service
 	sto := &ServiceStore{
 		m:           sync.RWMutex{},

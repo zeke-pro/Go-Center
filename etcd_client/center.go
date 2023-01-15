@@ -9,88 +9,63 @@ import (
 	"google.golang.org/grpc"
 	"log"
 	"os"
-	"path"
 	"time"
 )
 
-// Option  扩展属性参数
-type Option func(o *options)
-
-type options struct {
-	ttl time.Duration
-	//maxRetry         int    // 最大重试次数
-	addr             string //暂时不做冗余，只用一个地址
-	registrarTimeout time.Duration
-}
-
-// RegisterTTL with register ttl.
-func RegisterTTL(ttl time.Duration) Option {
-	return func(o *options) { o.ttl = ttl }
-}
-
-//func MaxRetry(num int) Option {
-//	return func(o *options) { o.maxRetry = num }
-//}
-
 type Center struct {
-	opts      *options
+	ttl       time.Duration //服务注册keepalive断开删除的ttl
 	client    *clientv3.Client
 	regKey    string
 	regCancel func()
 	leaseId   clientv3.LeaseID
 }
 
-func NewEtcdClientConfig() clientv3.Config {
-	if !IsSSL {
-		return clientv3.Config{
-			Endpoints:   []string{ETCDAddr},
-			DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
-		}
-	} else {
-		// 加载客户端证书
-		cert, err := tls.LoadX509KeyPair(path.Join(CertDir, CertFile), path.Join(CertDir, CertKeyFile))
+type CenterConfig struct {
+	RegisterTTL   time.Duration //服务注册keepalive断开删除的ttl
+	EtcdAddr      []string      //etcd地址
+	EtcdTlsConfig *tls.Config   //etcd tls配置
+}
+
+func NewDefaultCenterConfig() (*CenterConfig, error) {
+	var tlsConfig *tls.Config
+	if envConfInstance.EtcdSslEnable {
+		cert, err := tls.LoadX509KeyPair(envConfInstance.EtcdCertPath, envConfInstance.EtcdPriPath)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 
 		// 加载 CA 证书
-		caData, err := os.ReadFile(path.Join(CertDir, CertCAFile))
+		caData, err := os.ReadFile(envConfInstance.EtcdCaPath)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
-
 		pool := x509.NewCertPool()
 		pool.AppendCertsFromPEM(caData)
-
-		_tlsConfig := &tls.Config{
+		tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			RootCAs:      pool,
 		}
-
-		return clientv3.Config{
-			Endpoints:   []string{ETCDAddr},
-			DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
-			TLS: _tlsConfig,
-		}
 	}
+	return &CenterConfig{
+		RegisterTTL:   time.Second * 15,
+		EtcdAddr:      []string{envConfInstance.EtcdAddr},
+		EtcdTlsConfig: tlsConfig,
+	}, nil
 }
 
-func NewCenter(opts ...Option) (*Center, error) {
-	op := &options{
-		ttl:              time.Second * 15,
-		addr:             EtcdAddr,
-		registrarTimeout: time.Second * 5,
+func NewCenter(config *CenterConfig) (*Center, error) {
+	clientCfg := clientv3.Config{
+		Endpoints:   config.EtcdAddr,
+		DialTimeout: time.Second, DialOptions: []grpc.DialOption{grpc.WithBlock()},
+		TLS: config.EtcdTlsConfig,
 	}
-	for _, o := range opts {
-		o(op)
-	}
-	client, err := clientv3.New(NewEtcdClientConfig())
+	client, err := clientv3.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
 	return &Center{
-		opts:   op,
 		client: client,
+		ttl:    config.RegisterTTL,
 	}, nil
 }
 

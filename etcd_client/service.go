@@ -25,8 +25,8 @@ type Service struct {
 
 func NewCurrentService() *Service {
 	return &Service{
-		Id:   ServiceId,
-		Name: ServiceName,
+		Id:   envConfInstance.ServiceId,
+		Name: envConfInstance.ServiceName,
 	}
 }
 
@@ -43,14 +43,14 @@ func (r *Center) Register(service *Service) error {
 		return errors.New("current service id is not defined")
 	}
 	//服务kv
-	key := fmt.Sprintf("%s/%s/%s/%s", ServiceNamespace, "service", service.Name, service.Id)
+	key := fmt.Sprintf("%s/%s/%s/%s", envConfInstance.ServiceNamespace, "service", service.Name, service.Id)
 	data, err := json.Marshal(service)
 	if err != nil {
 		return err
 	}
 	value := string(data)
 
-	ctx, cancel := context.WithTimeout(r.client.Ctx(), r.opts.registrarTimeout)
+	ctx, cancel := context.WithTimeout(r.client.Ctx(), time.Second*3)
 	defer cancel()
 
 	// 写入etcd
@@ -70,7 +70,7 @@ func (r *Center) Register(service *Service) error {
 
 // registerWithKV create a new lease, return current leaseID
 func (r *Center) registerWithKV(ctx context.Context, key string, value string) (clientv3.LeaseID, error) {
-	grant, err := r.client.Grant(ctx, int64(r.opts.ttl.Seconds()))
+	grant, err := r.client.Grant(ctx, int64(time.Second*3))
 	if err != nil {
 		return 0, err
 	}
@@ -152,7 +152,7 @@ func (r *Center) Deregister() error {
 	if r.regCancel != nil {
 		r.regCancel()
 	}
-	ctx, cancel := context.WithTimeout(r.client.Ctx(), r.opts.registrarTimeout)
+	ctx, cancel := context.WithTimeout(r.client.Ctx(), time.Second*3)
 	defer cancel()
 	if r.regKey != "" {
 		_, err := r.client.Delete(ctx, r.regKey)

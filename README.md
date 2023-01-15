@@ -14,18 +14,18 @@ center/service/test_service/ce302a06-90e2-11ed-8cdb-8656d13e4381
 ```
 
 ## 环境变量
-| 名称                | 作用           | 默认值            |
-|-------------------|--------------|----------------|
-| CONFIG_DIR        | 配置文件路径       | ./config       |
-| ETCD_ADDR         | ETCD地址(带端口号) |127.0.0.1:2379|
-| SERVICE_ID        | 唯一标识         | uuid           |
-| SERVICE_NAME      | 服务名称       |                |
-| SERVICE_NAMESPACE | 命名空间         | center         |
-| IS_SSL             | 连接ETCD 是否启用TLS 证书 | false      |
-| CERT_DIR           | 证书存储目录          | cert/      |
-| CERT_KEY_FILE      | 证书存储目录          | client.key |
-| CERT_FILE          | 证书存储目录          | client.crt |
-| CERT_CA_FILE       | CA证书文件名称        | ca.crt     |
+| 名称                | 作用                | 默认值                     |
+|-------------------|-------------------|-------------------------|
+| CONFIG_DIR        | 配置文件路径            | ./config                |
+| ETCD_ADDR         | ETCD地址(带端口号)      | 127.0.0.1:2379          |
+| SERVICE_ID        | 唯一标识              | uuid                    |
+| SERVICE_NAME      | 服务名称              |                         |
+| SERVICE_NAMESPACE | 命名空间              | center                  |
+| ETCD_SSL_ENABLE   | 连接ETCD 是否启用TLS 证书 | false                   |
+| ETCD_CERT_DIR     | ETCD证书存储目录        | $CONFIG_DIR/etcd_ssl/   |
+| ETCD_CERT_PATH    | ETCD证书文件路径        | $ETCD_CERT_DIR/cert.crt |
+| ETCD_PRI_PATH     | ETCD证书私钥路径          | $ETCD_CERT_DIR/cert.key   |
+| ETCD_CA_PATH      | ETCD CA路径     | $ETCD_CERT_DIR/ca.crt                  |
 
 
 ## 证书生成和运行配置
@@ -61,9 +61,6 @@ peer-transport-security:
 ```
 
 运行etcd
-```
+```shell
 etcd  --config-file etcd.yml
 ```
-
-center程序配置运行，添加环境变量```IS_SSL=true ``` ，center程序运行时证书相关变量如表格所示
-
