@@ -10,6 +10,7 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 type RemoteConfig struct {
@@ -36,11 +37,12 @@ type IStore interface {
 }
 
 type Store[T any] struct {
-	data          T
-	version       int64
-	local         *LocalConfig
-	remote        *RemoteConfig
-	recNotifyList []chan *ReceivedData[T]
+	data        T
+	version     int64
+	local       *LocalConfig
+	remote      *RemoteConfig
+	m           sync.RWMutex                   //读写锁
+	subscribers map[chan *ReceivedData[T]]bool //订阅列表,key是channel，value是是否一次性
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
@@ -48,9 +50,11 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 	key := fmt.Sprintf("%s/%s/%s", ServiceNamespace, "config", name)
 	var data T
 	st := &Store[T]{
-		data:   data,
-		local:  &LocalConfig{filePath, true},
-		remote: &RemoteConfig{key, false, true},
+		m:           sync.RWMutex{},
+		subscribers: make(map[chan *ReceivedData[T]]bool),
+		data:        data,
+		local:       &LocalConfig{filePath, true},
+		remote:      &RemoteConfig{key, false, true},
 	}
 	return st
 }
@@ -62,17 +66,61 @@ func NewDefaultServiceStore(name string) *ServiceStore {
 	key := fmt.Sprintf("%s/%s/%s", ServiceNamespace, "service", name)
 	var data []*Service
 	sto := &ServiceStore{
-		data:   data,
-		local:  &LocalConfig{filePath, true},
-		remote: &RemoteConfig{key, true, true},
+		m:           sync.RWMutex{},
+		subscribers: make(map[chan *ReceivedData[[]*Service]]bool),
+		data:        data,
+		local:       &LocalConfig{filePath, true},
+		remote:      &RemoteConfig{key, true, true},
 	}
 	return sto
 }
 
-func (s *Store[T]) ReceivedNotify() <-chan *ReceivedData[T] {
+// OnceSubscribe 一次性订阅，收到信息后将channel删除
+func (s *Store[T]) OnceSubscribe() chan *ReceivedData[T] {
 	ch := make(chan *ReceivedData[T])
-	s.recNotifyList = append(s.recNotifyList, ch)
+	s.m.Lock()
+	s.subscribers[ch] = true
+	s.m.Unlock()
 	return ch
+}
+
+// Subscribe 普通订阅
+func (s *Store[T]) Subscribe() chan *ReceivedData[T] {
+	ch := make(chan *ReceivedData[T])
+	s.m.Lock()
+	s.subscribers[ch] = false
+	s.m.Unlock()
+	return ch
+}
+
+// Unsubscribe 取消订阅
+func (s *Store[T]) Unsubscribe(ch chan *ReceivedData[T]) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	_, has := s.subscribers[ch]
+	if !has {
+		return
+	}
+	close(ch)
+	delete(s.subscribers, ch)
+}
+
+// publish 发布
+func (s *Store[T]) publish(dt *ReceivedData[T]) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	for ch, once := range s.subscribers {
+		select {
+		case ch <- dt:
+		//成功
+		default:
+			log.Println("推送失败")
+		}
+		if once {
+			close(ch)
+			delete(s.subscribers, ch)
+		}
+	}
 }
 
 func (s *Store[T]) GetVersion() int64 {
@@ -154,7 +202,7 @@ func parseKV(kvs []*mvccpb.KeyValue, resType reflect.Type, remoteKey string) ref
 	return n
 }
 
-// 解析远程数据
+// ReceiveData 解析远程数据
 func (s *Store[T]) ReceiveData(kvs []*mvccpb.KeyValue, version int64) error {
 	if s.version == version {
 		return nil
@@ -175,27 +223,28 @@ func (s *Store[T]) ReceiveData(kvs []*mvccpb.KeyValue, version int64) error {
 		data = parsedValue.Elem().Interface().(T)
 	}
 	//原始版本非0
-	if len(s.recNotifyList) > 0 && s.version != 0 {
-		for _, notify := range s.recNotifyList {
-			notify <- &ReceivedData[T]{
-				NewData: data,
-				OldData: s.data,
-			}
+	if s.version != 0 {
+		rd := &ReceivedData[T]{
+			NewData: data,
+			OldData: s.data,
 		}
+		go s.publish(rd)
 	}
 	s.data = data
 	s.version = version
 	//写入文件
 	if local := s.Local(); local != nil && local.RequireWrite {
-		err := s.saveFile()
-		if err != nil {
-			return err
-		}
+		go func() {
+			err := s.saveFile()
+			if err != nil {
+				log.Printf("failed to write update to file.error:%s\n", err)
+			}
+		}()
 	}
 	return nil
 }
 
-// 从本地读取
+// ReadFile 从本地读取
 func (s *Store[T]) ReadFile() error {
 	if s.local == nil || s.local.Path == "" {
 		return nil
