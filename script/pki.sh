@@ -1,12 +1,11 @@
-#!/bin/bash -x
-export NAME1=etcd01
-export ADDRESS1=192.168.31.17
+NAME1=etcd01
+ADDRESS1=192.168.31.17
 
-export NAME2=etcd02
-export ADDRESS2=192.168.31.18
+NAME2=etcd02
+ADDRESS2=192.168.31.18
 
-export NAME3=etcd03
-export ADDRESS3=192.168.31.19
+NAME3=etcd03
+ADDRESS3=192.168.31.19
 
 
 

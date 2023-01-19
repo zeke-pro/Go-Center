@@ -190,7 +190,7 @@ func parseKV(kvs []*mvccpb.KeyValue, resType reflect.Type, remoteKey string) ref
 		for _, kv := range kvs {
 			keyStr := string(kv.Key)
 			keyStr = keyStr[len(remoteKey):]
-			key := reflect.ValueOf(kv.Key)
+			key := reflect.ValueOf(keyStr)
 			value := parseBytes(kv.Value, resType.Elem()).Elem()
 			mp.SetMapIndex(key, value)
 		}
