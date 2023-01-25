@@ -43,6 +43,7 @@ type Store[T any] struct {
 	remote      *RemoteConfig
 	m           sync.RWMutex                   //读写锁
 	subscribers map[chan *ReceivedData[T]]bool //订阅列表,key是channel，value是是否一次性
+	modify      func(data T) T
 }
 
 func NewDefaultConfigStore[T any](name string) *Store[T] {
@@ -61,6 +62,33 @@ func NewDefaultConfigStore[T any](name string) *Store[T] {
 
 type ServiceStore = Store[[]*Service]
 
+// NewVersionServiceStore 带版本号的Service
+func NewVersionServiceStore(name string, version string) *ServiceStore {
+	filePath := path.Join(envConfInstance.ConfigDir, fmt.Sprintf("service_%s.json", name))
+	key := fmt.Sprintf("%s/%s/%s", envConfInstance.ServiceNamespace, "service", name)
+	var data []*Service
+	sto := &ServiceStore{
+		m:           sync.RWMutex{},
+		subscribers: make(map[chan *ReceivedData[[]*Service]]bool),
+		data:        data,
+		local:       &LocalConfig{filePath, true},
+		remote:      &RemoteConfig{key, true, true},
+		modify: func(list []*Service) []*Service {
+			if list == nil || len(list) == 0 {
+				return list
+			}
+			res := make([]*Service, 0)
+			for _, s := range list {
+				if s.Version == version {
+					res = append(res, s)
+				}
+			}
+			return res
+		},
+	}
+	return sto
+}
+
 func NewDefaultServiceStore(name string) *ServiceStore {
 	filePath := path.Join(envConfInstance.ConfigDir, fmt.Sprintf("service_%s.json", name))
 	key := fmt.Sprintf("%s/%s/%s", envConfInstance.ServiceNamespace, "service", name)
@@ -73,6 +101,10 @@ func NewDefaultServiceStore(name string) *ServiceStore {
 		remote:      &RemoteConfig{key, true, true},
 	}
 	return sto
+}
+
+func (s *Store[T]) RegisterModify(f func(data T) T) {
+	s.modify = f
 }
 
 // OnceSubscribe 一次性订阅，收到信息后将channel删除
@@ -129,6 +161,96 @@ func (s *Store[T]) GetVersion() int64 {
 
 func (s *Store[T]) GetData() T {
 	return s.data
+}
+
+// ReceiveData 解析远程数据
+func (s *Store[T]) ReceiveData(kvs []*mvccpb.KeyValue, version int64) error {
+	if s.version == version {
+		return nil
+	}
+	var data T
+	if len(kvs) > 0 {
+		var parsedValue reflect.Value
+		prefix := s.remote.Prefix
+		if prefix {
+			prefixStr := fmt.Sprintf("%s/", s.Remote().Key)
+			parsedValue = parseKV(kvs, reflect.TypeOf(data), prefixStr)
+		} else {
+			parsedValue = parseBytes(kvs[0].Value, reflect.TypeOf(data))
+		}
+		if !parsedValue.IsValid() {
+			return errors.New("parse failed")
+		}
+		data = parsedValue.Elem().Interface().(T)
+	}
+	if s.modify != nil {
+		data = s.modify(data)
+	}
+	//原始版本非0
+	if s.version != 0 {
+		rd := &ReceivedData[T]{
+			NewData: data,
+			OldData: s.data,
+		}
+		go s.publish(rd)
+	}
+	s.data = data
+	s.version = version
+	//写入文件
+	if local := s.Local(); local != nil && local.RequireWrite {
+		go func() {
+			err := s.saveFile()
+			if err != nil {
+				log.Printf("failed to write update to file.error:%s\n", err)
+			}
+		}()
+	}
+	return nil
+}
+
+// ReadFile 从本地读取
+func (s *Store[T]) ReadFile() error {
+	if s.local == nil || s.local.Path == "" {
+		return nil
+	}
+	if b, err := os.ReadFile(s.local.Path); err == nil {
+		er := json.Unmarshal(b, s.data)
+		if er != nil {
+			return er
+		}
+	}
+	return nil
+}
+
+// 保存到本地
+func (s *Store[T]) saveFile() error {
+	l := s.Local()
+	if l == nil || !l.RequireWrite || l.Path == "" {
+		return nil
+	}
+	file, err := os.Create(l.Path)
+	defer file.Close()
+	if err != nil {
+		return err
+	}
+	var b []byte
+	b, err = json.Marshal(s.data)
+	if err != nil {
+		return err
+	}
+	_, err = file.Write(b)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store[T]) Remote() *RemoteConfig {
+	return s.remote
+}
+
+func (s *Store[T]) Local() *LocalConfig {
+	return s.local
 }
 
 // 不带Prefix的解析
@@ -200,91 +322,4 @@ func parseKV(kvs []*mvccpb.KeyValue, resType reflect.Type, remoteKey string) ref
 		return reflect.Value{}
 	}
 	return n
-}
-
-// ReceiveData 解析远程数据
-func (s *Store[T]) ReceiveData(kvs []*mvccpb.KeyValue, version int64) error {
-	if s.version == version {
-		return nil
-	}
-	var data T
-	if len(kvs) > 0 {
-		var parsedValue reflect.Value
-		prefix := s.remote.Prefix
-		if prefix {
-			prefixStr := fmt.Sprintf("%s/", s.Remote().Key)
-			parsedValue = parseKV(kvs, reflect.TypeOf(data), prefixStr)
-		} else {
-			parsedValue = parseBytes(kvs[0].Value, reflect.TypeOf(data))
-		}
-		if !parsedValue.IsValid() {
-			return errors.New("parse failed")
-		}
-		data = parsedValue.Elem().Interface().(T)
-	}
-	//原始版本非0
-	if s.version != 0 {
-		rd := &ReceivedData[T]{
-			NewData: data,
-			OldData: s.data,
-		}
-		go s.publish(rd)
-	}
-	s.data = data
-	s.version = version
-	//写入文件
-	if local := s.Local(); local != nil && local.RequireWrite {
-		go func() {
-			err := s.saveFile()
-			if err != nil {
-				log.Printf("failed to write update to file.error:%s\n", err)
-			}
-		}()
-	}
-	return nil
-}
-
-// ReadFile 从本地读取
-func (s *Store[T]) ReadFile() error {
-	if s.local == nil || s.local.Path == "" {
-		return nil
-	}
-	if b, err := os.ReadFile(s.local.Path); err == nil {
-		er := json.Unmarshal(b, s.data)
-		if er != nil {
-			return er
-		}
-	}
-	return nil
-}
-
-// 保存到本地
-func (s *Store[T]) saveFile() error {
-	l := s.Local()
-	if l == nil || !l.RequireWrite || l.Path == "" {
-		return nil
-	}
-	file, err := os.Create(l.Path)
-	defer file.Close()
-	if err != nil {
-		return err
-	}
-	var b []byte
-	b, err = json.Marshal(s.data)
-	if err != nil {
-		return err
-	}
-	_, err = file.Write(b)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Store[T]) Remote() *RemoteConfig {
-	return s.remote
-}
-
-func (s *Store[T]) Local() *LocalConfig {
-	return s.local
 }

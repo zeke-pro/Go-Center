@@ -1,13 +1,16 @@
 package main
 
 import (
-	"context"
 	ec "github.com/zeke-pro/doraemon-go/etcd_client"
 	"time"
 )
 
 func main() {
-	client, err := ec.NewCenter()
+	conf, err := ec.NewDefaultCenterConfig()
+	if err != nil {
+		panic(err)
+	}
+	client, err := ec.NewCenter(conf)
 	if err != nil {
 		panic(err)
 	}
@@ -19,7 +22,6 @@ func main() {
 	time.Sleep(time.Second * 2)
 	self.Name = "edit-name"
 	client.Register(self)
-	context.TODO().Done()
 	for {
 	}
 }
