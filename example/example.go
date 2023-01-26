@@ -2,7 +2,6 @@ package main
 
 import (
 	ec "github.com/zeke-pro/doraemon-go/etcd_client"
-	"time"
 )
 
 func main() {
@@ -18,9 +17,7 @@ func main() {
 	self := ec.NewCurrentService()
 	self.Name = "test-name"
 	self.Id = "test-id"
-	client.Register(self)
-	time.Sleep(time.Second * 2)
-	self.Name = "edit-name"
+	self.Version = "v1"
 	client.Register(self)
 	for {
 	}

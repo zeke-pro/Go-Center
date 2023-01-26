@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"log"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,10 @@ type Center struct {
 	client      *clientv3.Client
 	registerMap map[*Service]*register
 	maxRetry    int
+	cancelLease func()
+	reqTimeout  time.Duration
+	leaseId     clientv3.LeaseID
+	mu          sync.Mutex
 }
 
 type Endpoint struct {
@@ -47,17 +52,16 @@ func NewCurrentService() *Service {
 }
 
 type register struct {
-	key     string
-	value   string
-	cancel  func()
-	leaseId clientv3.LeaseID
+	key   string
+	value string
 }
 
 type CenterConfig struct {
-	RegisterTTL   int64       //服务注册keepalive断开删除的ttl
-	EtcdAddr      []string    //etcd地址
-	EtcdTlsConfig *tls.Config //etcd tls配置
-	MaxRetry      int         //注册最大重试次数
+	RegisterTTL    int64         //服务注册keepalive断开删除的ttl
+	EtcdAddr       []string      //etcd地址
+	EtcdTlsConfig  *tls.Config   //etcd tls配置
+	MaxRetry       int           //注册最大重试次数
+	RequestTimeout time.Duration //每次请求的超时时间
 }
 
 func NewDefaultCenterConfig() (*CenterConfig, error) {
@@ -81,10 +85,11 @@ func NewDefaultCenterConfig() (*CenterConfig, error) {
 		}
 	}
 	return &CenterConfig{
-		RegisterTTL:   3,
-		EtcdAddr:      []string{envConfInstance.EtcdAddr},
-		EtcdTlsConfig: tlsConfig,
-		MaxRetry:      10,
+		RegisterTTL:    3,
+		EtcdAddr:       []string{envConfInstance.EtcdAddr},
+		EtcdTlsConfig:  tlsConfig,
+		MaxRetry:       10,
+		RequestTimeout: time.Second * 3,
 	}, nil
 }
 
@@ -103,35 +108,132 @@ func NewCenter(config *CenterConfig) (*Center, error) {
 		ttl:         config.RegisterTTL,
 		maxRetry:    config.MaxRetry,
 		registerMap: make(map[*Service]*register),
+		reqTimeout:  config.RequestTimeout,
 	}, nil
 }
 
 func (c *Center) Close() error {
-	for reg := range c.registerMap {
-		err := c.Deregister(reg)
+	for k, _ := range c.registerMap {
+		err := c.Deregister(k)
 		if err != nil {
 			return err
 		}
 	}
+	if c.cancelLease != nil {
+		c.cancelLease()
+	}
 	return c.client.Close()
+}
+
+func (c *Center) startLease() error {
+	if c.leaseId != 0 {
+		return errors.New("已存在lease id")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancelLease = cancel
+	kaCh, err := c.createLease(ctx)
+	if err != nil {
+		cancel()
+		return err
+	}
+	go func() {
+		for {
+			if ctx.Err() != nil {
+				return
+			}
+			//是否主动停止
+			stopped := c.keepLease(ctx, kaCh)
+			c.mu.Lock()
+			c.leaseId = 0
+			c.mu.Unlock()
+			if stopped {
+				fmt.Printf("租约被注销\n")
+				return
+			} else {
+				fmt.Printf("连接断开，开始重新连接\n")
+				kaCh, err = c.createLease(ctx)
+				if err != nil {
+					fmt.Printf("创建lease失败，错误：%s\n", err)
+					return
+				}
+				go c.rePutServices()
+				fmt.Println("重新创建lease成功")
+			}
+		}
+	}()
+	return nil
+}
+
+func (c *Center) createLease(ctx context.Context) (<-chan *clientv3.LeaseKeepAliveResponse, error) {
+	if c.leaseId != 0 {
+		return nil, errors.New("lease id 已经存在")
+	}
+	retryNum := 0
+	for {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		if retryNum > c.maxRetry {
+			break
+		}
+		retryNum++
+		reqCtx, cancel := context.WithTimeout(ctx, c.reqTimeout)
+		leaseResp, err := c.client.Grant(reqCtx, c.ttl)
+		if err != nil {
+			fmt.Printf("创建lease失败，错误 %s", err)
+			cancel()
+			continue
+		}
+		ch, err := c.client.KeepAlive(ctx, leaseResp.ID)
+		if err != nil {
+			fmt.Printf("创建keepalive失败，错误 %s", err)
+			cancel()
+			continue
+		}
+		c.leaseId = leaseResp.ID
+		cancel()
+		return ch, nil
+	}
+	return nil, errors.New("重试次数超过上限，创建lease失败")
+}
+
+func (c *Center) keepLease(ctx context.Context, ch <-chan *clientv3.LeaseKeepAliveResponse) bool {
+	for {
+		select {
+		case <-ctx.Done():
+			return true
+		case _, isOpen := <-ch:
+			if !isOpen {
+				if ctx.Err() != nil {
+					return true
+				}
+				return false
+			}
+		}
+	}
+}
+
+// rePutServices 重新put服务发现，通常因为leaseId变化
+func (c *Center) rePutServices() {
+	if len(c.registerMap) > 0 && c.leaseId != 0 {
+		for _, s := range c.registerMap {
+			c.client.Put(context.TODO(), s.key, s.value, clientv3.WithLease(c.leaseId))
+		}
+	}
 }
 
 // Deregister the registration.
 func (c *Center) Deregister(service *Service) error {
+	if service == nil {
+		return errors.New("service is not defined")
+	}
 	r, has := c.registerMap[service]
 	if !has {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	ctx, cancel := context.WithTimeout(context.Background(), c.reqTimeout)
 	defer cancel()
 	_, err := c.client.Delete(ctx, r.key)
-	if err != nil {
-		return err
-	}
-	if r.cancel != nil {
-		r.cancel()
-	}
-	_, err = c.client.Revoke(ctx, r.leaseId)
 	if err != nil {
 		return err
 	}
@@ -150,86 +252,32 @@ func (c *Center) Register(service *Service) error {
 	if service.Id == "" {
 		return errors.New("current service id is not defined")
 	}
-	err := c.Deregister(service)
-	if err != nil {
-		return err
+	//如果没有租约，先创建租约
+	c.mu.Lock()
+	if c.leaseId == 0 {
+		c.startLease()
 	}
-	r := &register{}
-	c.registerMap[service] = r
-	//服务kv
-	r.key = fmt.Sprintf("%s/%s/%s/%s", envConfInstance.ServiceNamespace, "service", service.Name, service.Id)
+	c.mu.Unlock()
 	data, err := json.Marshal(service)
 	if err != nil {
 		return err
 	}
-	r.value = string(data)
-	ctx, cancel := context.WithCancel(context.Background())
-	r.cancel = cancel
-	go func() {
-		n := 0
-		for {
-			if n > c.maxRetry {
-				fmt.Println("重试次数超过上限，注册失败")
-				c.Deregister(service)
-				return
-			}
-			n++
-			leaseId, err := c.registerKV(ctx, r)
-			if err != nil {
-				fmt.Printf("第%d次注册失败，原因:%s\n", n, err)
-				time.Sleep(time.Second * 3)
-				continue
-			}
-			r.leaseId = leaseId
-			alive, err := c.client.KeepAlive(ctx, leaseId)
-			if err != nil {
-				fmt.Printf("第%d次注册时，创建keepalive失败，原因:%s\n", n, err)
-				time.Sleep(time.Second * 3)
-				continue
-			}
-			fmt.Println("服务注册成功")
-			n = 0
-			stopped := c.keep(ctx, alive)
-			if stopped {
-				fmt.Printf("服务被注销\n")
-				return
-			}
-			fmt.Printf("keepAlive连接断开，重新注册\n")
-			continue
+	re := &register{
+		key:   fmt.Sprintf("%s/%s/%s/%s", envConfInstance.ServiceNamespace, "service", service.Name, service.Id),
+		value: string(data),
+	}
+	if ore, has := c.registerMap[service]; has {
+		if ore.key != re.key {
+			c.Deregister(service)
 		}
-	}()
+	}
+	ctx, _ := context.WithTimeout(context.Background(), c.reqTimeout)
+	_, err = c.client.Put(ctx, re.key, re.value, clientv3.WithLease(c.leaseId))
+	if err != nil {
+		return err
+	}
+	c.registerMap[service] = re
 	return nil
-}
-
-func (c *Center) keep(ctx context.Context, ch <-chan *clientv3.LeaseKeepAliveResponse) bool {
-	for {
-		select {
-		case <-ctx.Done():
-			return true
-		case _, ok := <-ch:
-			if !ok {
-				if ctx.Err() != nil {
-					return true
-				}
-				return false
-			}
-		}
-	}
-}
-
-func (c *Center) registerKV(parentCtx context.Context, reg *register) (clientv3.LeaseID, error) {
-	ctx, cancel := context.WithTimeout(parentCtx, time.Second*3)
-	defer cancel()
-	leaseResp, err := c.client.Grant(ctx, c.ttl)
-	if err != nil {
-		return 0, err
-	}
-	_, err = c.client.Put(ctx, reg.key, reg.value, clientv3.WithLease(leaseResp.ID))
-	if err != nil {
-		c.client.Revoke(ctx, leaseResp.ID)
-		return 0, err
-	}
-	return leaseResp.ID, nil
 }
 
 func (c *Center) GetEtcdClient() *clientv3.Client {
