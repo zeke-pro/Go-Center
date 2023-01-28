@@ -255,6 +255,11 @@ func (s *Store[T]) Local() *LocalConfig {
 
 // 不带Prefix的解析
 func parseBytes(b []byte, resType reflect.Type) reflect.Value {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("解析失败，错误 %s\n", err)
+		}
+	}()
 	n := reflect.New(resType)
 	if b == nil || len(b) == 0 {
 		return n
@@ -289,6 +294,11 @@ func parseBytes(b []byte, resType reflect.Type) reflect.Value {
 
 // 带Prefix的解析，data必须是引用类型
 func parseKV(kvs []*mvccpb.KeyValue, resType reflect.Type, remoteKey string) reflect.Value {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("解析失败，错误 %s\n", err)
+		}
+	}()
 	n := reflect.New(resType)
 	if len(kvs) == 0 {
 		return n

@@ -38,10 +38,11 @@ func (e *Endpoint) GetUrl() string {
 }
 
 type Service struct {
-	Id        string      `json:"id"`
-	Version   string      `json:"version"`
-	Name      string      `json:"name"`
-	Endpoints []*Endpoint `json:"endpoints"`
+	Id        string            `json:"id"`
+	Version   string            `json:"version"`
+	Name      string            `json:"name"`
+	Metadata  map[string]string `json:"metadata"`
+	Endpoints []*Endpoint       `json:"endpoints"`
 }
 
 func NewCurrentService() *Service {
