@@ -81,8 +81,9 @@ func NewDefaultCenterConfig() (*CenterConfig, error) {
 		pool := x509.NewCertPool()
 		pool.AppendCertsFromPEM(caData)
 		tlsConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			RootCAs:      pool,
+			Certificates:       []tls.Certificate{cert},
+			RootCAs:            pool,
+			InsecureSkipVerify: true,
 		}
 	}
 	return &CenterConfig{
